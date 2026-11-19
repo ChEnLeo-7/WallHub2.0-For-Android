@@ -2,83 +2,340 @@
 <SmellBaseline>
   <ManuallySuppressedIssues/>
   <CurrentIssues>
-    <ID>ComplexCondition:FormalWorkshopDownloadWorker.kt$FormalWorkshopDownloadWorker$progress.phase == SteamDownloadPhase.DOWNLOADING &amp;&amp; !enteringDownloadPhase &amp;&amp; now &gt; lastSpeedAt &amp;&amp; progress.completedBytes &gt;= lastSpeedBytes</ID>
-    <ID>ComplexCondition:HomeMotion.kt$HomeContextMenuGeometry$cardBounds.width &lt;= 0f || cardBounds.height &lt;= 0f || clipBounds.width &lt;= 0f || clipBounds.height &lt;= 0f || !touchPositionInWindow.x.isFinite() || !touchPositionInWindow.y.isFinite()</ID>
-    <ID>ComplexCondition:HomeMotion.kt$HomeViewCardLayoutMotion$!stage.isParticipantReady(HomeCardProjectionParticipant.CARD) || !stage.isParticipantReady(HomeCardProjectionParticipant.MEDIA) || !stage.hasMeasurement(participant) || stage.isParticipantReady(participant)</ID>
-    <ID>ComplexCondition:HomeMotion.kt$HomeViewCardLayoutMotion$sourceCardBounds != null &amp;&amp; targetCardBounds != null &amp;&amp; sourceMediaBounds != null &amp;&amp; targetMediaBounds != null &amp;&amp; sourceBounds != null &amp;&amp; targetBounds != null &amp;&amp; initialMediaTransform != null</ID>
-    <ID>ComplexCondition:HomeMotion.kt$HomeViewCardLayoutMotion$sourceCardBounds != null &amp;&amp; targetCardBounds != null &amp;&amp; visibleCardBounds != null &amp;&amp; sourceBounds != null &amp;&amp; targetBounds != null</ID>
-    <ID>ComplexCondition:HomeMotion.kt$HomeViewCardLayoutMotion$wasUnmeasured &amp;&amp; animateEdgeEntry &amp;&amp; projectionGroup.pendingStage == null &amp;&amp; currentBounds.hasArea()</ID>
+    <ID>ComplexCondition:CommunityWorkshopHtmlDetail.kt$enlarged.host != thumbnailUrl.host || enlarged.port != thumbnailUrl.port || enlarged.encodedPath != thumbnailUrl.encodedPath || enlarged.username.isNotEmpty() || enlarged.password.isNotEmpty()</ID>
+    <ID>ComplexCondition:ConversionCheckpointStore.kt$ConversionCheckpointStore.Companion$character in 'a'..'z' || character in 'A'..'Z' || character in '0'..'9' || character == '-' || character == '_'</ID>
+    <ID>ComplexCondition:ConversionResourceCheckpointAdapter.kt$ConversionResourceCheckpointAdapter$resource.sourceOffset != request.sourceOffset || resource.sourceLength != request.sourceLength || resource.sourceSha256 != request.sourceSha256 || resource.strategy != request.strategy.name</ID>
+    <ID>ComplexCondition:DiscoverCuratorManifestParser.kt$DiscoverCuratorManifestParser$(activeFrom != null &amp;&amp; now &lt; activeFrom) || (activeUntil != null &amp;&amp; now &gt; activeUntil)</ID>
+    <ID>ComplexCondition:DiscoverFeedCoordinator.kt$error is IllegalArgumentException || error is UnsupportedOperationException || "invalidparam" in message || "invalid param" in message || "unsupported" in message</ID>
+    <ID>ComplexCondition:DiscoverResultsScreen.kt$DiscoverResultsViewModel$!current.initialized || current.isLoading || !current.hasMore || current.requiresSteamLogin || current.isRestoringSteamSession</ID>
+    <ID>ComplexCondition:DownloadLiveTelemetry.kt$DownloadLiveTelemetry$activity == DownloadLiveActivity.RECEIVING &amp;&amp; networkBytesPerSecond != null &amp;&amp; lastNetworkActivityAt != null &amp;&amp; now - lastNetworkActivityAt &gt;= NETWORK_ACTIVITY_STALE_AFTER_MS</ID>
+    <ID>ComplexCondition:FormalDownloadRunner.kt$FormalDownloadRunner$!directDownload &amp;&amp; task.credentialMode == DownloadCredentialMode.ACCOUNT.name &amp;&amp; (!task.accountName.isNullOrBlank() &amp;&amp; !task.accountName.equals(credential?.accountName, ignoreCase = true))</ID>
+    <ID>ComplexCondition:FormalWorkshopConversionWorker.kt$target.exists &amp;&amp; target.isPending != true &amp;&amp; (target.displayName == expectedOutputName || (target.isPending == false &amp;&amp; state in setOf(ExportTransactionState.WRITING, ExportTransactionState.COMMITTED)))</ID>
+    <ID>ComplexCondition:GitHubNetworkClient.kt$isAnyLocalAddress || isLoopbackAddress || isLinkLocalAddress || isMulticastAddress || isSiteLocalAddress</ID>
     <ID>ComplexCondition:HomeScreen.kt$state.paginationMode != HomePaginationMode.INFINITE_SCROLL || state.isInitialLoading || state.isLoadingMore || !state.hasNextPage</ID>
     <ID>ComplexCondition:HomeViewModel.kt$HomeViewModel$state.paginationMode != HomePaginationMode.INFINITE_SCROLL || state.isInitialLoading || state.isLoadingMore || !state.hasNextPage</ID>
-    <ID>ComplexCondition:LibraryContextMenu.kt$LibraryContextMenuCoordinator$cardBounds.width &lt;= 0f || cardBounds.height &lt;= 0f || clipBounds.width &lt;= 0f || clipBounds.height &lt;= 0f || !touchPositionInWindow.x.isFinite() || !touchPositionInWindow.y.isFinite()</ID>
-    <ID>ComplexCondition:LibraryScreen.kt$LibraryViewModel$state.paginationMode != HomePaginationMode.INFINITE_SCROLL || state.searchQuery.trim() != state.appliedSearchQuery.trim() || state.isLoading || state.isLoadingMore || !state.hasNextPage</ID>
+    <ID>ComplexCondition:LibraryScreen.kt$!isPageActive || state.paginationMode != HomePaginationMode.INFINITE_SCROLL || state.searchQuery.trim() != state.appliedSearchQuery.trim() || state.isLoading || state.isLoadingMore || state.appendErrorRes != null || !state.hasNextPage</ID>
+    <ID>ComplexCondition:LibraryScreen.kt$LibraryViewModel$state.paginationMode != HomePaginationMode.INFINITE_SCROLL || state.searchQuery.trim() != state.appliedSearchQuery.trim() || state.isLoading || state.isLoadingMore || state.appendErrorRes != null || !state.hasNextPage</ID>
     <ID>ComplexCondition:LibraryScreen.kt$LibraryViewModel$state.paginationMode != HomePaginationMode.PAGED || state.searchQuery.trim() != state.appliedSearchQuery.trim() || state.isLoading || state.isLoadingMore</ID>
-    <ID>ComplexCondition:LibraryScreen.kt$state.paginationMode != HomePaginationMode.INFINITE_SCROLL || state.searchQuery.trim() != state.appliedSearchQuery.trim() || state.isLoading || state.isLoadingMore || !state.hasNextPage</ID>
-    <ID>ComplexCondition:OnlineVideoPlayerScreen.kt$activity != null &amp;&amp; window != null &amp;&amp; latestFullscreenEnabled &amp;&amp; !activity.isChangingConfigurations</ID>
-    <ID>ComplexCondition:SecureSteamSessionRepository.kt$SecureSteamSessionRepository$!sourceExhausted &amp;&amp; (normalized.resolveTotalCount || matches.size.toLong() &lt;= requestedEndIndex) &amp;&amp; sourcePage &lt;= MAX_ACCOUNT_COLLECTION_FILTER_SOURCE_PAGES</ID>
-    <ID>ComplexCondition:SecureSteamSessionRuntime.kt$stage.contains("failure") || stage.contains("timeout") || stage.contains("disconnect") || stage.contains("rejected")</ID>
-    <ID>ComplexCondition:SteamAccessManager.kt$SteamAccessManager$route == null || !route.accelerated || route.addresses.isEmpty() || routeGeneration.get() != selectedGeneration || networkType != selectedNetworkType</ID>
+    <ID>ComplexCondition:SteamAccessManager.kt$SteamAccessManager$plan.usesBridge &amp;&amp; latest.steamAccessMode == SteamAccessMode.SMART_DOH &amp;&amp; candidates.generation == currentGeneration &amp;&amp; latestFingerprint == fingerprint</ID>
+    <ID>ComplexCondition:SteamAccessManager.kt$SteamAccessManager$warning &amp;&amp; preferences.steamAccessEnabled &amp;&amp; preferences.steamAccessMode == SteamAccessMode.SMART_DOH &amp;&amp; (plan.usesBridge || plan.environment is SteamEnvironment.Open)</ID>
+    <ID>ComplexCondition:SteamAccountCollectionMutationLedger.kt$SteamAccountCollectionMutationLedger$mayConfirm &amp;&amp; (remoteContainsItem == mutation.change.present) &amp;&amp; (mutation.change.present || remoteCanConfirmAbsence)</ID>
+    <ID>ComplexCondition:SteamAnonymousReadRetry.kt$request.headers.names().any { it.equals("Authorization", true) || it.equals("Cookie", true) || it.equals("Proxy-Authorization", true) || it.equals("x-webapi-key", true) || it.equals("Expect", true) || it.equals("Transfer-Encoding", true) || it.equals("Upgrade", true) }</ID>
+    <ID>ComplexCondition:SteamContentSdkAuthenticatedSessionRegistry.kt$SteamContentSdkAuthenticatedSessionRegistry$current != null &amp;&amp; current.accountKey == accountName.accountKey() &amp;&amp; current.snapshot.engine === engine &amp;&amp; current.snapshot.generation &gt; generation</ID>
+    <ID>ComplexCondition:SteamContentSdkSessionBackend.kt$SteamContentSdkSessionBackend$!fromScheduledPlan &amp;&amp; !explicitReconnect &amp;&amp; readiness.isReady &amp;&amp; consumedReadyGeneration.get() == readiness.generation</ID>
+    <ID>ComplexCondition:SteamContentSdkSessionBackend.kt$SteamContentSdkSessionBackend$activeSession.get() !== session || runCatching { session.authorizationGeneration() }.getOrNull() != generation || logoutInProgress.get() || mutableSession.value.phase != SteamSessionPhase.WAITING_FOR_DEVICE_CONFIRMATION</ID>
+    <ID>ComplexCondition:SteamContentSdkWorkshopTransfer.kt$SteamContentSdkWorkshopTransfer$failure.ordinal == TaskFailure.SESSION_GENERATION_LOST || failure.ordinal == SDK_TASK_FAILURE_CONTENT_DIRECTORY_UNAVAILABLE || ( failure.ordinal == TaskFailure.AUTHORIZATION &amp;&amp; failure.diagnostic == SESSION_UNAVAILABLE_DIAGNOSTIC )</ID>
+    <ID>ComplexCondition:SteamContentSdkWorkshopTransfer.kt$SteamContentSdkWorkshopTransfer$status.state == TaskState.DOWNLOADING &amp;&amp; (status.firstContentReceived || currentNetworkBytes &gt; 0L) &amp;&amp; System.nanoTime() - lastActivityAtNanos &gt;= DOWNLOAD_NO_PROGRESS_TIMEOUT_NANOS</ID>
+    <ID>ComplexCondition:SteamLoopbackTlsBridge.kt$address.isAnyLocalAddress || address.isLoopbackAddress || address.isLinkLocalAddress || address.isSiteLocalAddress || address.isMulticastAddress</ID>
+    <ID>ComplexCondition:SteamRemoteVideoStream.kt$SteamRemoteVideoStream$aheadJob === prefetchJob &amp;&amp; prefetchJob?.isActive == true &amp;&amp; latestReadStart &lt; end &amp;&amp; latestReadEnd &gt;= from</ID>
+    <ID>ComplexCondition:SteamVideoStreamCache.kt$SteamVideoStreamCache$claimValid &amp;&amp; current != null &amp;&amp; !state.activeChunkWrites.containsKey(path) &amp;&amp; !isProtectedPathLocked(path)</ID>
+    <ID>ComplexCondition:SteamWorkshopContentClient.kt$supplied.isBlank() || '/' in supplied || '\\' in supplied || supplied.videoFileExtension() != extension</ID>
+    <ID>ComplexCondition:TexMobileConverter.kt$TexMobileConverter$!metadata.baseCompressed || metadata.baseWidth != metadata.imageWidth || metadata.baseHeight != metadata.imageHeight || metadata.textureWidth != metadata.imageWidth || metadata.textureHeight != metadata.imageHeight</ID>
+    <ID>ComplexCondition:TexMobileConverter.kt$TexMobileConverter$metadata.container != "TEXB0004" || metadata.mipmapCount != 1 || metadata.imageFormat != -1 || metadata.baseCompressed || metadata.baseStoredSize &lt;= 0 || metadata.payloadLength != metadata.baseStoredSize.toLong() || metadata.baseWidth != metadata.imageWidth || metadata.baseHeight != metadata.imageHeight || metadata.animationTailLength != 0L</ID>
+    <ID>ComplexCondition:TexMobileConverter.kt$TexMobileConverter$metadata.flags and TEX_FLAG_GIF != 0 || metadata.animationTailLength != 0L || metadata.container != "TEXB0004" || metadata.mipmapCount != 1 || metadata.imageFormat != -1 || metadata.isMp4</ID>
+    <ID>ComplexCondition:TexMobileConverter.kt$TexMobileConverter$metadata.flags and TEX_FLAG_GIF == 0 || metadata.flags and TEX_FLAG_VIDEO != 0 || !metadata.hasVerifiedAnimationTail || metadata.container != "TEXB0004" || metadata.mipmapCount != 1 || metadata.imageFormat != -1 || metadata.isMp4 || metadata.format !in setOf(TEX_FORMAT_RGBA8888, TEX_FORMAT_ETC2_RGBA8_LZ4)</ID>
+    <ID>ComplexCondition:WorkshopConverter.kt$ShaderCompatibility$bracketDepth == 0 &amp;&amp; inFloatContext &amp;&amp; !isFloatingLiteral &amp;&amp; !isDecimalPart &amp;&amp; !touchesIdentifier</ID>
+    <ID>ComplexCondition:WorkshopConverter.kt$ShaderCompatibility$codeMask.any { it in "&amp;|%" } || "&lt;&lt;" in codeMask || "&gt;&gt;" in codeMask || "==" in codeMask || "!=" in codeMask || "&lt;=" in codeMask || "&gt;=" in codeMask</ID>
+    <ID>ComplexCondition:WorkshopConverter.kt$WorkshopConverter$plan == null || animatedImageDecoder != null || staticImageDecoder != null || shaderRewriter != null || shaderRewriterWithPath != null</ID>
+    <ID>ComplexCondition:WorkshopDetailViewModel.kt$WorkshopDetailViewModel$current.detail?.summary?.type != WorkshopType.VIDEO || !current.onlineChunkPlaybackEnabled || current.inlineVideoStream != null || current.isLoadingInlineVideo</ID>
+    <ID>ComplexCondition:WorkshopQuerySemantics.kt$value.isBlank() || value.workshopSearchIdOrNull() != null || value.workshopAuthorSearchOrNull() != null || value.workshopDetailTagSearch().isNotEmpty()</ID>
     <ID>CyclomaticComplexMethod:AppPreferencesStore.kt$AppPreferencesStore$private fun toAppPreferences(preferences: Preferences): AppPreferences</ID>
+    <ID>CyclomaticComplexMethod:BettboxDownloadsScreen.kt$@Composable internal fun BettboxDownloadFab( expanded: Boolean, onExpandedChange: (Boolean) -&gt; Unit, globalLabel: String?, isResume: Boolean, filterLabel: String, retryLabel: String, clearLabel: String, failedCount: Int, completedCount: Int, onGlobalAction: () -&gt; Unit, onFilter: () -&gt; Unit, onRetry: () -&gt; Unit, onClear: () -&gt; Unit, modifier: Modifier = Modifier, filterMenuExpanded: Boolean = false, onFilterMenuDismiss: () -&gt; Unit = {}, selectedTypes: Set&lt;WorkshopType&gt; = FilterableWorkshopTypes, onSelectTypes: (Set&lt;WorkshopType&gt;) -&gt; Unit = {}, )</ID>
+    <ID>CyclomaticComplexMethod:CommunityWorkshopHtmlDetail.kt$private fun detailPreviewUrl(markup: String): String?</ID>
+    <ID>CyclomaticComplexMethod:CommunityWorkshopParser.kt$internal fun parsePublicCommentsPage( payload: JSONObject, requestedStart: Int, requestedCount: Int, creatorId: String, ): WorkshopCommentPage</ID>
     <ID>CyclomaticComplexMethod:CommunityWorkshopRepository.kt$CommunityWorkshopRepository$private fun loadSteamProfiles( steamIds: Set&lt;String&gt;, steamApiKey: String, ): Map&lt;String, SteamWebProfile&gt;</ID>
-    <ID>CyclomaticComplexMethod:CommunityWorkshopRequestBuilder.kt$internal fun WorkshopBrowseQuery.matches(summary: WorkshopSummary): Boolean</ID>
-    <ID>CyclomaticComplexMethod:FormalWallHubApp.kt$@Composable private fun WallHubNavHost( modifier: Modifier, navController: NavHostController, homeScrollRequest: Int, managementScrollToTopRequest: Int, onHomeContextMenuActiveChanged: (Boolean) -&gt; Unit, onManagementBoundaryNavigation: (Int) -&gt; Unit, animateTopLevelTransitions: Boolean, )</ID>
+    <ID>CyclomaticComplexMethod:CommunityWorkshopRepository.kt$internal fun mergeFreshDetailWithSeed( fresh: WorkshopDetail, seed: WorkshopDetail, ): WorkshopDetail</ID>
+    <ID>CyclomaticComplexMethod:CommunityWorkshopRequestBuilder.kt$internal fun buildBrowseUrl(query: WorkshopBrowseQuery): String</ID>
+    <ID>CyclomaticComplexMethod:ComposeMedia3Player.kt$@Composable internal fun ComposeMedia3Player( player: Player, fullscreen: Boolean, onFullscreenChange: (Boolean) -&gt; Unit, modifier: Modifier = Modifier, inlineCornerRadius: Dp? = null, )</ID>
+    <ID>CyclomaticComplexMethod:DeclarativeMaterialGraph.kt$DeclarativeMaterialGraph$fun analyzeDocuments( documents: Sequence&lt;Pair&lt;String, Result&lt;String&gt;&gt;&gt;, texturePaths: Set&lt;String&gt;, checkCancellation: () -&gt; Unit = {}, ): MaterialGraphResult</ID>
+    <ID>CyclomaticComplexMethod:DiscoverCuratorNoSniTransport.kt$private fun isPublicCuratorIpv4(bytes: List&lt;Int&gt;): Boolean</ID>
+    <ID>CyclomaticComplexMethod:DiscoverCuratorNoSniTransport.kt$private fun parseHttpResponse(responseStream: java.io.InputStream): CuratorTransportResponse</ID>
+    <ID>CyclomaticComplexMethod:DiscoverFollowingScreen.kt$@OptIn(ExperimentalLayoutApi::class) @Composable fun DiscoverQueryEditorRoute( onBack: () -&gt; Unit, onSaved: (DiscoverSavedQuery) -&gt; Unit, viewModel: DiscoverQueryEditorViewModel = hiltViewModel(), )</ID>
+    <ID>CyclomaticComplexMethod:DiscoverQueryAdapter.kt$DiscoverQueryAdapter$private fun adaptSemantic( descriptor: DiscoverCuratorDescriptor, category: String, rawSemantic: String, dataSource: SteamWorkshopDataSource, page: Int, pageSize: Int, ): DiscoverQueryPlan</ID>
+    <ID>CyclomaticComplexMethod:DiscoverResultsScreen.kt$@Composable fun DiscoverResultsRoute( onBack: () -&gt; Unit, onOpenDetail: (Long) -&gt; Unit, onSearchAuthor: (String) -&gt; Unit, onOpenDownloads: () -&gt; Unit = {}, onOpenLogin: () -&gt; Unit = {}, viewModel: DiscoverResultsViewModel = hiltViewModel(), )</ID>
+    <ID>CyclomaticComplexMethod:DiscoverResultsScreen.kt$@Composable private fun discoverResultsTitle( destination: DiscoverResultsDestination, resolvedAuthor: String?, ): String</ID>
+    <ID>CyclomaticComplexMethod:DiscoverResultsScreen.kt$DiscoverResultsViewModel$fun loadNextPage()</ID>
+    <ID>CyclomaticComplexMethod:DiscoverScreen.kt$@Composable fun DiscoverRoute( onOpenDetail: (Long) -&gt; Unit, onOpenRail: (DiscoverRailSpec, String?) -&gt; Unit = { _, _ -&gt; }, onOpenFollowing: () -&gt; Unit = {}, onOpenFriendFavorites: () -&gt; Unit = {}, onOpenFriendCreated: () -&gt; Unit = {}, refreshRequest: Int = 0, viewModel: DiscoverViewModel = hiltViewModel(), )</ID>
+    <ID>CyclomaticComplexMethod:DiscoverScreen.kt$@Composable private fun railTitle(rail: DiscoverRailState): String</ID>
+    <ID>CyclomaticComplexMethod:DiscoverViewModel.kt$DiscoverViewModel$private suspend fun loadRail( spec: DiscoverRailSpec, generation: Long, )</ID>
+    <ID>CyclomaticComplexMethod:DownloadLiveTelemetry.kt$DownloadLiveTelemetry$fun accept( taskId: String, progress: SteamDownloadProgress, )</ID>
+    <ID>CyclomaticComplexMethod:DownloadsScreen.kt$@Composable fun DownloadsScreen( state: DownloadsUiState, onAction: (DownloadsAction) -&gt; Unit, onOpenSettings: () -&gt; Unit = {}, onBack: () -&gt; Unit = {}, onOpenDetail: (Long) -&gt; Unit = {}, onBrowse: () -&gt; Unit = {}, initialWideView: Boolean = false, initialFabExpanded: Boolean = false, )</ID>
+    <ID>CyclomaticComplexMethod:DownloadsScreen.kt$@Composable private fun DownloadTaskCard( task: DownloadTask, onAction: (DownloadAction) -&gt; Unit, onReconvert: (MpkgConversionPreset, Boolean) -&gt; Unit, onPlayVideo: () -&gt; Unit, onOpenDetail: () -&gt; Unit, modifier: Modifier = Modifier, )</ID>
+    <ID>CyclomaticComplexMethod:DownloadsScreen.kt$@Composable private fun ReorderableDownloadList( tasks: List&lt;DownloadTask&gt;, onAction: (String, DownloadAction) -&gt; Unit, onReconvert: (String, MpkgConversionPreset, Boolean) -&gt; Unit, onPlayVideo: (String) -&gt; Unit, onOpenDetail: (Long) -&gt; Unit, onReorder: (List&lt;String&gt;) -&gt; Unit, modifier: Modifier = Modifier, )</ID>
+    <ID>CyclomaticComplexMethod:FormalDownloadRunner.kt$FormalDownloadRunner$suspend fun run(taskId: String): DownloadHostRunResult</ID>
+    <ID>CyclomaticComplexMethod:FormalWallHubApp.kt$@Composable fun FormalWallHubApp( preferences: AppPreferences, steamSession: SteamSessionState, onSetupWizardCompleted: () -&gt; Unit, onRetrySteamRestore: () -&gt; Unit, )</ID>
     <ID>CyclomaticComplexMethod:FormalWorkshopConversionWorker.kt$FormalWorkshopConversionWorker$override suspend fun doWork(): Result</ID>
-    <ID>CyclomaticComplexMethod:FormalWorkshopDownloadWorker.kt$FormalWorkshopDownloadWorker$override suspend fun doWork(): Result</ID>
-    <ID>CyclomaticComplexMethod:GitHubAppUpdateRepository.kt$GitHubAppUpdateRepository$override suspend fun downloadRelease( release: AppReleaseInfo, onProgress: (downloadedBytes: Long, totalBytes: Long) -&gt; Unit, ): String</ID>
-    <ID>CyclomaticComplexMethod:HomeScreen.kt$@Composable fun HomeScreen( state: HomeUiState, onAction: (HomeAction) -&gt; Unit, onBack: (() -&gt; Unit)? = null, scrollToTopRequest: Int = 0, onContextMenuActiveChanged: (Boolean) -&gt; Unit = {}, )</ID>
-    <ID>CyclomaticComplexMethod:HomeScreen.kt$@OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class) @Composable internal fun HomeResults( state: HomeUiState, onRetry: () -&gt; Unit, onLoadNextPage: () -&gt; Unit, onPageSelected: (Int) -&gt; Unit, onOpenDetail: (Long) -&gt; Unit, onPrimaryAction: (WorkshopSummary) -&gt; Unit, onDownload: (WorkshopSummary) -&gt; Unit, onSearchAuthor: (String) -&gt; Unit, onCopyText: (String, String) -&gt; Unit, onOpenSteam: (Long) -&gt; Unit, onAuthorNameRequested: (WorkshopSummary) -&gt; Unit, gridState: LazyGridState, contextMenuPreviewItemId: Long?, contextMenuGeometry: HomeContextMenuGeometry, onContextMenuOpen: (HomeContextMenuTarget) -&gt; Unit, onContextMenuDismiss: (Long) -&gt; Unit, modifier: Modifier = Modifier, )</ID>
+    <ID>CyclomaticComplexMethod:FormalWorkshopConversionWorker.kt$SafExportGateway$suspend fun exportFile( context: Context, outputTreeUri: Uri, source: File, transaction: ExportTransaction, persistTransaction: suspend (ExportTransaction) -&gt; Unit, ): String</ID>
+    <ID>CyclomaticComplexMethod:GitHubNetworkClient.kt$private fun Inet4Address.isUsableGitHubPublicIpv4(): Boolean</ID>
+    <ID>CyclomaticComplexMethod:HomeFilterBar.kt$@OptIn(ExperimentalLayoutApi::class) @Composable internal fun HomeFilterDrawer( state: HomeUiState, isOpen: Boolean, onAction: (HomeAction) -&gt; Unit, onDismiss: () -&gt; Unit, showSortAndTime: Boolean = true, showExactPhrase: Boolean = true, title: String? = null, additionalFilters: (@Composable () -&gt; Unit)? = null, onResetAdditionalFilters: () -&gt; Unit = {}, modifier: Modifier = Modifier, )</ID>
+    <ID>CyclomaticComplexMethod:HomeScreen.kt$@Composable internal fun HomeResults( state: HomeUiState, scrollingHeader: (@Composable () -&gt; Unit)? = null, onRetry: () -&gt; Unit, onLoadNextPage: () -&gt; Unit, onPageSelected: (Int) -&gt; Unit, onOpenDetail: (Long) -&gt; Unit, onPrimaryAction: (WorkshopSummary) -&gt; Unit, onDownload: (WorkshopSummary) -&gt; Unit, onSearchAuthor: (String) -&gt; Unit, onCopyText: (String, Int) -&gt; Unit, onOpenSteam: (Long) -&gt; Unit, onAuthorNameRequested: (WorkshopSummary) -&gt; Unit, gridState: LazyGridState, coverRequestSizePx: Int, cardScene: HomeCardSceneState, pullToRefreshState: PullToRefreshState, showPullToRefresh: Boolean, onContentTopChanged: (Int) -&gt; Unit, bottomContentPadding: Dp = WallHubSpacing.xs, modifier: Modifier = Modifier, )</ID>
+    <ID>CyclomaticComplexMethod:HomeScreen.kt$@Composable internal fun HomeScreen( state: HomeUiState, onAction: (HomeAction) -&gt; Unit, onOpenSettings: (() -&gt; Unit)? = null, onBack: (() -&gt; Unit)? = null, scrollToTopRequest: Int = 0, gridState: LazyGridState = rememberLazyGridState(), cardScene: HomeCardSceneState = remember { HomeCardSceneState() }, onContextMenuActiveChanged: (Boolean) -&gt; Unit = {}, onBottomNavigationCollapsedChanged: (Boolean) -&gt; Unit = {}, floatingBottomBarAutoHideActive: Boolean = false, floatingNavigation: @Composable BoxScope.() -&gt; Unit = {}, )</ID>
+    <ID>CyclomaticComplexMethod:HomeScreen.kt$@Composable private fun HomeScreenBody( state: HomeUiState, onAction: (HomeAction) -&gt; Unit, onOpenSettings: (() -&gt; Unit)?, onBack: (() -&gt; Unit)?, gridState: LazyGridState, cardScene: HomeCardSceneState, filtersCollapsed: Boolean, filtersOpen: Boolean, bottomNavigationCollapsed: Boolean, onOpenFilters: () -&gt; Unit, onSearchBoundsChanged: (IntRect) -&gt; Unit, focusManager: androidx.compose.ui.focus.FocusManager, chromeHidden: Boolean, pullToRefreshState: PullToRefreshState, showPullToRefresh: Boolean, onContentTopChanged: (Int) -&gt; Unit, )</ID>
+    <ID>CyclomaticComplexMethod:HomeViewModel.kt$HomeViewModel$private fun loadPage( page: Int, append: Boolean, version: Long, scrollToTopOnSuccess: Boolean = false, )</ID>
+    <ID>CyclomaticComplexMethod:LegacyExploreCuratorParser.kt$LegacyExploreCuratorParser$private fun JSONObject.toDtoOrNull(): LegacyExploreItemDto?</ID>
+    <ID>CyclomaticComplexMethod:LegacyExploreCuratorParser.kt$LegacyExploreCuratorParser$private fun toDescriptorOrNull(dto: LegacyExploreItemDto): DiscoverCuratorDescriptor?</ID>
+    <ID>CyclomaticComplexMethod:LibraryScreen.kt$@OptIn(ExperimentalFoundationApi::class) @Composable fun LibraryScreen( state: LibraryUiState, onAction: (LibraryAction) -&gt; Unit, onOpenLogin: () -&gt; Unit = {}, onBack: () -&gt; Unit = {}, onContextMenuActiveChanged: (Boolean) -&gt; Unit = {}, )</ID>
+    <ID>CyclomaticComplexMethod:LibraryScreen.kt$@OptIn(ExperimentalFoundationApi::class) @Composable private fun LibraryResultsContent( state: LibraryUiState, onRefresh: () -&gt; Unit, onClearQuery: () -&gt; Unit, onResetFilters: () -&gt; Unit, onOpenLogin: () -&gt; Unit, onPageSelected: (Int) -&gt; Unit, onRetryNextPage: () -&gt; Unit, onOpenDetail: (Long) -&gt; Unit, onPlayVideo: (Long) -&gt; Unit, onSearchAuthor: (String) -&gt; Unit, authorDisplayNames: Map&lt;Long, String&gt;, onAuthorNameRequested: (WorkshopSummary) -&gt; Unit, onDownload: (WorkshopSummary) -&gt; Unit, onRemoveFromCollection: (WorkshopSummary) -&gt; Unit, onCopyText: (String, String) -&gt; Unit, onOpenSteam: (Long) -&gt; Unit, gridState: LazyGridState, contextMenuCoordinator: LibraryContextMenuCoordinator, modifier: Modifier = Modifier, )</ID>
+    <ID>CyclomaticComplexMethod:LibraryScreen.kt$LibraryViewModel$private fun handleStateAction(action: LibraryAction)</ID>
+    <ID>CyclomaticComplexMethod:LibraryScreen.kt$LibraryViewModel$private fun removeFromCollection( collection: LibraryCollectionTab, item: WorkshopSummary, )</ID>
+    <ID>CyclomaticComplexMethod:LocalVideoPlayerScreen.kt$internal suspend fun resolveVideoFile(root: File): File?</ID>
     <ID>CyclomaticComplexMethod:LocalWallpaperScanner.kt$internal fun LocalWallpaperFileRepository.inspectProjectDirectory( parent: String, siblings: List&lt;ScanNode&gt;, tasks: List&lt;FormalTaskRecordEntity&gt;, states: Map&lt;String, LocalWallpaperStateEntity&gt;, tags: Map&lt;String, List&lt;String&gt;&gt;, ): LocalWallpaperResource?</ID>
     <ID>CyclomaticComplexMethod:LocalWallpaperScanner.kt$internal fun LocalWallpaperFileRepository.inspectStandalone( node: ScanNode, tasks: List&lt;FormalTaskRecordEntity&gt;, states: Map&lt;String, LocalWallpaperStateEntity&gt;, tags: Map&lt;String, List&lt;String&gt;&gt;, ): LocalWallpaperResource?</ID>
     <ID>CyclomaticComplexMethod:LocalWallpaperScanner.kt$internal fun LocalWallpaperFileRepository.inspectZip(node: ScanNode): PackageInspection</ID>
-    <ID>CyclomaticComplexMethod:SecureSteamSessionRuntime.kt$internal suspend fun SecureSteamSessionRepository.restorePersistedSessionInternal(generation: Long)</ID>
-    <ID>CyclomaticComplexMethod:SteamAccessManager.kt$SteamAccessManager$private fun buildRoute( hostname: String, selectedNetworkType: String, settings: AppPreferences, hostsSnapshot: Map&lt;String, List&lt;InetAddress&gt;&gt;, generation: Long, fallbackAvailable: Boolean, ): SteamCachedRoute</ID>
+    <ID>CyclomaticComplexMethod:LocalWallpaperScreen.kt$@Composable private fun LocalWallpaperDetailPage( resource: LocalWallpaperResource?, onBack: () -&gt; Unit, onToggleFavorite: (String) -&gt; Unit, onDeleteResource: (LocalWallpaperResource) -&gt; Unit, onReplaceTags: (String, Set&lt;String&gt;) -&gt; Unit, onAddTag: (LocalWallpaperResource) -&gt; Unit, onSystemAction: (LocalWallpaperAction) -&gt; Unit, modifier: Modifier = Modifier, )</ID>
+    <ID>CyclomaticComplexMethod:LocalWallpaperScreen.kt$@OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class) @Composable internal fun LocalWallpaperScreen( state: LocalWallpaperUiState, isPageActive: Boolean, onAction: (LocalWallpaperAction) -&gt; Unit, onScrollChromeCollapsedChanged: (Boolean) -&gt; Unit, onOpenSettings: () -&gt; Unit, onBack: () -&gt; Unit, initialFiltersOpen: Boolean = false, )</ID>
+    <ID>CyclomaticComplexMethod:MemoryWeightedResourcePipeline.kt$MemoryWeightedResourcePipeline$fun &lt;T, R&gt; execute( work: List&lt;ResourceWork&lt;T&gt;&gt;, checkCancellation: () -&gt; Unit, transform: (ResourceWork&lt;T&gt;, () -&gt; Unit) -&gt; R, ): List&lt;R&gt;</ID>
+    <ID>CyclomaticComplexMethod:MpkgFormat.kt$MpkgWriter$fun write( entries: List&lt;MpkgInputEntry&gt;, outputFile: File, magic: String, checkCancellation: () -&gt; Unit = {}, ): MpkgManifest</ID>
+    <ID>CyclomaticComplexMethod:OnlineVideoPlayerScreen.kt$@Composable fun OnlineVideoPlayerScreen( state: OnlineVideoPlayerUiState, onBack: () -&gt; Unit, onRetry: (Long) -&gt; Unit, fullscreen: Boolean, onFullscreenChange: (Boolean) -&gt; Unit, shouldShowPlaybackStartNotice: () -&gt; Boolean = { true }, )</ID>
+    <ID>CyclomaticComplexMethod:PkgFormat.kt$PkgReader$fun readIndex(file: File): PkgArchive</ID>
+    <ID>CyclomaticComplexMethod:SettingsScreen.kt$@Composable fun SettingsScreen( preferences: AppPreferences, appLanguage: AppLanguage, steamAccessState: SteamAccessState, session: SteamSessionState, diagnosticExportState: DiagnosticExportUiState, notificationsGranted: Boolean, appUpdateState: AppUpdateUiState, workshopSourceCacheState: WorkshopSourceCacheUiState, openSteamSignIn: Boolean = false, onBack: () -&gt; Unit, onAction: (SettingsAction) -&gt; Unit, )</ID>
+    <ID>CyclomaticComplexMethod:SettingsViewModel.kt$SettingsViewModel$private fun handleAppearanceAndHomeAction(action: SettingsAction): Boolean</ID>
+    <ID>CyclomaticComplexMethod:SteamAccessDohResolver.kt$SteamAccessDohResolver.Companion.DnsWireReader$fun skipName()</ID>
+    <ID>CyclomaticComplexMethod:SteamAccessManager.kt$SteamAccessManager$private suspend fun ensureDohSelection( settings: AppPreferences, force: Boolean = false, scheduleRetry: Boolean = true, ): List&lt;String&gt;</ID>
+    <ID>CyclomaticComplexMethod:SteamAnonymousReadRetry.kt$internal fun mayUseSteamWebAlias( connectAuthority: String, requestHead: String, ): Boolean</ID>
+    <ID>CyclomaticComplexMethod:SteamAnonymousReadRetry.kt$private fun mayRetryAnonymousSteamRead(request: Request, error: IOException, canceled: Boolean): Boolean</ID>
+    <ID>CyclomaticComplexMethod:SteamContentSdkSessionBackend.kt$SteamContentSdkSessionBackend$override fun useManualSteamGuardFallback()</ID>
+    <ID>CyclomaticComplexMethod:SteamContentSdkSessionBackend.kt$SteamContentSdkSessionBackend$private fun admitRecoveryIfReady( readiness: SteamSessionNetworkReadiness, reopenForEgress: Boolean = false, )</ID>
+    <ID>CyclomaticComplexMethod:SteamContentSdkSessionBackend.kt$SteamContentSdkSessionBackend$private fun publishAttemptFailure( restore: Boolean, accountName: String?, hasStoredSession: Boolean, failure: SteamContentSdkSessionFailure, sdkDetail: String? = null, ): Boolean</ID>
+    <ID>CyclomaticComplexMethod:SteamContentSdkSessionBackend.kt$SteamContentSdkSessionBackend$private fun releaseSessionIfCurrent(expected: SteamContentSdkPlatformSession): Boolean</ID>
+    <ID>CyclomaticComplexMethod:SteamContentSdkWorkshopTransfer.kt$SteamContentSdkWorkshopTransfer$private suspend fun downloadOnce( target: WorkshopContentTarget, destinationDirectory: File, options: SteamContentDownloadOptions, control: suspend () -&gt; SteamDownloadControl, onProgress: suspend (SteamDownloadProgress) -&gt; Unit, afterGeneration: Long? = null, ): SteamContentDownloadResult</ID>
+    <ID>CyclomaticComplexMethod:SteamContentSdkWorkshopTransfer.kt$SteamContentSdkWorkshopTransfer$private suspend fun runTask( task: SteamContentSdkTask, destinationDirectory: File, options: SteamContentDownloadOptions, control: suspend () -&gt; SteamDownloadControl, onProgress: suspend (SteamDownloadProgress) -&gt; Unit, ): SteamContentDownloadResult</ID>
+    <ID>CyclomaticComplexMethod:SteamContentSdkWorkshopTransfer.kt$private fun sdkTaskEventName(kind: Int): String</ID>
+    <ID>CyclomaticComplexMethod:SteamLoopbackTlsBridge.kt$SteamLoopbackTlsBridge$private fun handle(clientSocket: Socket)</ID>
+    <ID>CyclomaticComplexMethod:SteamLoopbackTlsBridge.kt$internal fun isAuthenticatedCdnAddress(address: InetAddress): Boolean</ID>
+    <ID>CyclomaticComplexMethod:SteamLoopbackTlsBridge.kt$private fun isAuthenticatedCdnIpv4(bytes: List&lt;Int&gt;): Boolean</ID>
+    <ID>CyclomaticComplexMethod:SteamRemoteVideoStream.kt$SteamRemoteVideoStream$private suspend fun fetchRangeBytes( start: Long, length: Int, prefetch: Boolean = false, ): ByteArray</ID>
+    <ID>CyclomaticComplexMethod:SteamRemoteVideoStream.kt$SteamRemoteVideoStream$private suspend fun scheduleAheadPrefetch(from: Long)</ID>
+    <ID>CyclomaticComplexMethod:SteamSettingsContent.kt$@Composable private fun SteamAccessDohEditor( endpoints: List&lt;String&gt;, disabledEndpoints: Set&lt;String&gt;, endpointStatuses: List&lt;com.wallhub.android.core.model.SteamDohEndpointStatus&gt;, endpointText: String, endpointError: String?, hasChanges: Boolean, onEndpointTextChange: (String) -&gt; Unit, onAddEndpoint: () -&gt; Unit, onReorder: (List&lt;String&gt;) -&gt; Unit, onEnabledChange: (String, Boolean) -&gt; Unit, onDelete: (String) -&gt; Unit, onRestoreDefaults: () -&gt; Unit, onCancel: () -&gt; Unit, onSave: () -&gt; Unit, modifier: Modifier = Modifier, )</ID>
+    <ID>CyclomaticComplexMethod:SteamSettingsContent.kt$@OptIn(ExperimentalMaterial3Api::class) @Composable internal fun SteamAccessDohEndpointsSetting( endpoints: List&lt;String&gt;, disabledEndpoints: Set&lt;String&gt;, endpointStatuses: List&lt;com.wallhub.android.core.model.SteamDohEndpointStatus&gt; = emptyList(), onSave: (List&lt;String&gt;, Set&lt;String&gt;) -&gt; Unit, )</ID>
+    <ID>CyclomaticComplexMethod:SteamWorkshopContentClient.kt$private fun validatedPreviewExtension(file: File): String?</ID>
+    <ID>CyclomaticComplexMethod:SteamWorkshopContentClient.kt$private suspend fun downloadDirectFile( client: okhttp3.OkHttpClient, url: String, destination: File, expectedSize: Long, maxBytes: Long = MAX_DIRECT_FILE_BYTES, control: suspend () -&gt; SteamDownloadControl, playbackCoordinator: PlaybackDownloadCoordinator? = null, onChunkCommitted: (suspend () -&gt; Unit)? = null, onProgress: suspend (completedBytes: Long, totalBytes: Long, networkBytesRead: Long) -&gt; Unit, ): Long</ID>
+    <ID>CyclomaticComplexMethod:TexMobileConverter.kt$TexMobileConverter$internal fun convertStaticToRgbaFile( sourceFile: File, offset: Long, length: Long, outputFile: File, maxDecodedRgbaBytes: Long = STANDARD_MAX_RGBA_BYTES, checkCancellation: () -&gt; Unit = {}, ): TexFileConversionResult</ID>
+    <ID>CyclomaticComplexMethod:TexMobileConverter.kt$TexMobileConverter$internal fun inspectEntryDecision( sourceFile: File, offset: Long, length: Long, maxHeapBytes: Long = Runtime.getRuntime().maxMemory(), ): TexEntryDecision</ID>
+    <ID>CyclomaticComplexMethod:TexMobileConverter.kt$TexMobileConverter$private fun classifyRuntimeDesktopFamily(reader: ByteCursor): TexRuntimeDesktopFamily</ID>
+    <ID>CyclomaticComplexMethod:TexMobileConverter.kt$TexMobileConverter$private fun embeddedImageDimensions(header: ByteArray): Pair&lt;Int, Int&gt;?</ID>
+    <ID>CyclomaticComplexMethod:TexMobileConverter.kt$TexMobileConverter$private fun isVerifiedAnimatedMobileCompatible(metadata: TexEntryMetadata): Boolean</ID>
+    <ID>CyclomaticComplexMethod:TexMobileConverter.kt$TexMobileConverter$private fun isVerifiedMobileCompatible(metadata: TexEntryMetadata): Boolean</ID>
+    <ID>CyclomaticComplexMethod:TexMobileConverter.kt$TexMobileConverter$private fun isVerifiedVideoTex( sourceFile: File, metadata: TexEntryMetadata, ): Boolean</ID>
     <ID>CyclomaticComplexMethod:TexMobileConverter.kt$TexMobileConverter$private fun parse(source: ByteArray): TexFile</ID>
-    <ID>CyclomaticComplexMethod:UnifiedWorkshopBrowse.kt$private fun WorkshopBrowseQuery.matches(summary: WorkshopSummary): Boolean</ID>
+    <ID>CyclomaticComplexMethod:TexMobileConverter.kt$TexMobileConverter$private fun readTexEntryMetadata( sourceFile: File, offset: Long, length: Long, ): TexEntryMetadata</ID>
+    <ID>CyclomaticComplexMethod:ThemeEditorScreen.kt$@Composable internal fun ThemeEditorScreen( preferences: AppPreferences, customAccentColor: String, onBack: () -&gt; Unit, onThemePreferenceChange: (ThemePreference) -&gt; Unit, onVisualStyleChange: (VisualStyle) -&gt; Unit, onCustomAccentColorChanged: (String) -&gt; Unit, onAccentChange: (AccentPreference, String?) -&gt; Unit, onSystemMonetEnabledChange: (Boolean) -&gt; Unit, onThemedLauncherIconEnabledChange: (Boolean) -&gt; Unit, onSchemeStyleChange: (ThemeSchemeStyle) -&gt; Unit = {}, onContrastLevelChange: (ThemeContrastLevel) -&gt; Unit = {}, onPureBlackInDarkChange: (Boolean) -&gt; Unit = {}, previewContrastMenuOpen: Boolean = false, )</ID>
+    <ID>CyclomaticComplexMethod:WallHubPagination.kt$@Composable fun WallHubPaginationControl( currentPage: Int, totalPages: Int, isLoading: Boolean, currentContentDescription: String, onPageSelected: (Int) -&gt; Unit, modifier: Modifier = Modifier, )</ID>
+    <ID>CyclomaticComplexMethod:WallHubSetupWizard.kt$@Composable fun WallHubSetupWizard( onComplete: () -&gt; Unit, viewModel: WallHubSetupViewModel = hiltViewModel(), )</ID>
+    <ID>CyclomaticComplexMethod:WallHubSetupWizard.kt$@Composable private fun AntiBlockingWarmupPage( state: SetupAntiBlockingWarmupState, showReadyContinue: Boolean, onRetry: () -&gt; Unit, onReadyContinue: () -&gt; Unit, )</ID>
+    <ID>CyclomaticComplexMethod:WallHubSetupWizard.kt$@Composable private fun StoragePage( preferences: AppPreferences, errorMessage: String?, hasFileAccess: Boolean, onRequestAccess: () -&gt; Unit, )</ID>
+    <ID>CyclomaticComplexMethod:WorkshopConversionDomain.kt$WorkshopConversionPlanner$private fun textureStrategy( scenePackage: File, entry: IndexedPkgEntry, policy: ConversionPolicy, device: DeviceCapabilityProfile, declaredSemantic: TextureSemantic?, ): Pair&lt;ResourceStrategy, String&gt;</ID>
+    <ID>CyclomaticComplexMethod:WorkshopConverter.kt$ShaderCompatibility$private fun maskShaderCommentsAndStrings( source: String, checkCancellation: () -&gt; Unit, ): String</ID>
+    <ID>CyclomaticComplexMethod:WorkshopConverter.kt$ShaderCompatibility$private fun promoteIntegerLiteralsInFloatExpression( expression: String, codeMask: String = expression, checkCancellation: () -&gt; Unit = {}, ): String</ID>
+    <ID>CyclomaticComplexMethod:WorkshopConverter.kt$WorkshopConverter$fun execute( plan: ConversionPlan, inputDir: File, outputFile: File, contentTypeHint: String? = null, checkCancellation: () -&gt; Unit = {}, animatedImageDecoder: ((File, Int, Int, () -&gt; Unit) -&gt; ByteArray)? = null, staticImageDecoder: ((File, Int, Int, () -&gt; Unit) -&gt; ByteArray)? = null, shaderRewriter: ((String, () -&gt; Unit) -&gt; String)? = null, shaderRewriterWithPath: ((String, String, () -&gt; Unit) -&gt; String?)? = null, resourceCheckpoint: ConversionResourceCheckpoint? = null, timing: MpkgTimingSession? = null, ): WorkshopConversionReport</ID>
+    <ID>CyclomaticComplexMethod:WorkshopConverter.kt$WorkshopConverter$private fun convertScene( inputDir: File, outputFile: File, checkCancellation: () -&gt; Unit, animatedImageDecoder: ((File, Int, Int, () -&gt; Unit) -&gt; ByteArray)?, staticImageDecoder: ((File, Int, Int, () -&gt; Unit) -&gt; ByteArray)?, plan: ConversionPlan? = null, shaderRewriter: ((String, () -&gt; Unit) -&gt; String)? = null, shaderRewriterWithPath: ((String, String, () -&gt; Unit) -&gt; String?)? = null, resourceCheckpoint: ConversionResourceCheckpoint? = null, timing: MpkgTimingSession? = null, ): WorkshopConversionReport</ID>
+    <ID>CyclomaticComplexMethod:WorkshopDetailOverview.kt$@OptIn(ExperimentalLayoutApi::class) @Composable internal fun DetailOverviewPage( detail: WorkshopDetail, onCopyWorkshopId: (Long) -&gt; Unit, onSearchAuthor: (String) -&gt; Unit, onSearchTag: (String) -&gt; Unit, )</ID>
+    <ID>CyclomaticComplexMethod:WorkshopDetailScreen.kt$@OptIn( ExperimentalFoundationApi::class, ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class, ) @Composable private fun WorkshopDetailPane( detail: WorkshopDetail, pagerState: androidx.compose.foundation.pager.PagerState, nestedScrollConnection: NestedScrollConnection, headerOffsetPx: Float, onHeaderOffsetChange: (Float) -&gt; Unit, onHeaderHeightChanged: (Int) -&gt; Unit, onCoverHeightChanged: (Int) -&gt; Unit, inlineVideoPlayback: SteamChunkPlayback?, inlineVideoPlaybackEnabled: Boolean, isLoadingInlineVideo: Boolean, inlineVideoError: DetailUiText?, onStartInlineVideo: () -&gt; Unit, onRetryInlineVideo: () -&gt; Unit, onInlineFullscreenChange: (Boolean) -&gt; Unit, comments: List&lt;WorkshopComment&gt;, commentsTotal: Int?, commentsHasMore: Boolean, isLoadingComments: Boolean, isLoadingMoreComments: Boolean, commentsError: DetailUiText?, canPostComment: Boolean, commentDraft: String, isPostingComment: Boolean, commentPostError: DetailUiText?, onCommentsVisible: () -&gt; Unit, onRetryComments: () -&gt; Unit, onLoadMoreComments: () -&gt; Unit, onCommentDraftChanged: (String) -&gt; Unit, onSubmitComment: () -&gt; Unit, interaction: WorkshopInteraction, isLoadingInteraction: Boolean, isUpdatingInteraction: Boolean, interactionMessage: DetailUiText?, steamSession: SteamSessionState, onReconnectSteam: () -&gt; Unit, isEnqueuingDownload: Boolean, canSubmitUnknownInteraction: Boolean, downloadMessage: DetailUiText?, onOpenDownloads: () -&gt; Unit, onToggleSubscription: () -&gt; Unit, onToggleFavorite: () -&gt; Unit, onShowDownloadChoices: () -&gt; Unit, onCopyWorkshopId: (Long) -&gt; Unit, onSearchAuthor: (String) -&gt; Unit, onSearchTag: (String) -&gt; Unit, modifier: Modifier = Modifier, )</ID>
+    <ID>CyclomaticComplexMethod:WorkshopDetailScreen.kt$@OptIn(ExperimentalMaterial3Api::class) @Composable fun WorkshopDetailScreen( state: WorkshopDetailUiState, onBack: () -&gt; Unit, onRetry: () -&gt; Unit, onToggleSubscription: () -&gt; Unit, onToggleFavorite: () -&gt; Unit, onReconnectSteam: () -&gt; Unit, onStartInlineVideo: () -&gt; Unit, onRetryInlineVideo: () -&gt; Unit, onExportFormatSelected: (ExportFormat) -&gt; Unit, onMpkgConversionPresetSelected: (MpkgConversionPreset) -&gt; Unit, onPreserveAudioChanged: (Boolean) -&gt; Unit, onDownload: () -&gt; Unit, onCommentsVisible: () -&gt; Unit, onRetryComments: () -&gt; Unit, onLoadMoreComments: () -&gt; Unit, onCommentDraftChanged: (String) -&gt; Unit, onSubmitComment: () -&gt; Unit, onInlineFullscreenChange: (Boolean) -&gt; Unit, shouldShowInlinePlaybackStartNotice: () -&gt; Boolean = { true }, onFullscreenPlaybackChanged: (Boolean) -&gt; Unit = {}, onSearchAuthor: (String) -&gt; Unit, onSearchTag: (String) -&gt; Unit, onCopyText: (String, String) -&gt; Unit, onOpenSteam: (Long) -&gt; Unit, onOpenDownloads: () -&gt; Unit, onOpenSettings: () -&gt; Unit, )</ID>
+    <ID>CyclomaticComplexMethod:WorkshopDetailViewModel.kt$WorkshopDetailViewModel$private fun loadComments(refresh: Boolean)</ID>
     <ID>ForEachOnRange:TexMobileConverter.kt$TexMobileConverter$1..4</ID>
     <ID>ForEachOnRange:TexMobileConverter.kt$TexMobileConverter$1..6</ID>
+    <ID>InstanceOfCheckForException:SteamSessionRequestRecovery.kt$SteamSessionRequestRecovery$failure is SteamSessionGenerationChangedException</ID>
+    <ID>InstanceOfCheckForException:SteamWorkshopReadCoordinator.kt$SteamWorkshopReadCoordinator$caught is kotlinx.coroutines.CancellationException</ID>
+    <ID>InstanceOfCheckForException:WorkshopConverter.kt$WorkshopConverter$error is CancellationException</ID>
+    <ID>InvalidPackageDeclaration:AndroidLauncherIconController.kt$package com.wallhub.android</ID>
+    <ID>InvalidPackageDeclaration:AppModule.kt$package com.wallhub.android</ID>
+    <ID>InvalidPackageDeclaration:CrashDiagnostics.kt$package com.wallhub.android</ID>
+    <ID>InvalidPackageDeclaration:DiscoverFeedbackModule.kt$package com.wallhub.android</ID>
+    <ID>InvalidPackageDeclaration:FormalWallHubApp.kt$package com.wallhub.android</ID>
+    <ID>InvalidPackageDeclaration:MainActivity.kt$package com.wallhub.android</ID>
+    <ID>InvalidPackageDeclaration:RepositoryModule.kt$package com.wallhub.android</ID>
+    <ID>InvalidPackageDeclaration:ShellViewModel.kt$package com.wallhub.android</ID>
+    <ID>InvalidPackageDeclaration:TopLevelDestinations.kt$package com.wallhub.android</ID>
+    <ID>InvalidPackageDeclaration:WallHubApplication.kt$package com.wallhub.android</ID>
+    <ID>InvalidPackageDeclaration:WallHubApplicationEntryPoint.kt$package com.wallhub.android</ID>
+    <ID>InvalidPackageDeclaration:WallHubDestinations.kt$package com.wallhub.android</ID>
+    <ID>InvalidPackageDeclaration:WallHubNavGraph.kt$package com.wallhub.android</ID>
+    <ID>InvalidPackageDeclaration:WallHubNavigationLayout.kt$package com.wallhub.android</ID>
+    <ID>InvalidPackageDeclaration:WallHubNavigationTransitions.kt$package com.wallhub.android</ID>
+    <ID>InvalidPackageDeclaration:WorkshopDetailNavigation.kt$package com.wallhub.android</ID>
+    <ID>LargeClass:CommunityWorkshopRepository.kt$CommunityWorkshopRepository : WorkshopRepository</ID>
+    <ID>LargeClass:FormalWorkshopConversionWorker.kt$FormalWorkshopConversionWorker : CoroutineWorker</ID>
+    <ID>LargeClass:LibraryScreen.kt$LibraryViewModel : ViewModel</ID>
+    <ID>LargeClass:SteamAccessManager.kt$SteamAccessManager : DnsSteamAccessRepository</ID>
+    <ID>LargeClass:SteamContentSdkSessionBackend.kt$SteamContentSdkSessionBackend : SteamSessionRepository</ID>
+    <ID>LargeClass:TexMobileConverter.kt$TexMobileConverter</ID>
+    <ID>LargeClass:WorkshopConverter.kt$WorkshopConverter</ID>
+    <ID>LargeClass:WorkshopDetailViewModel.kt$WorkshopDetailViewModel : ViewModel</ID>
+    <ID>LoopWithTooManyJumpStatements:BoundedFileReader.kt$while</ID>
     <ID>LoopWithTooManyJumpStatements:CommunityWorkshopParser.kt$CommunityWorkshopParser$for</ID>
     <ID>LoopWithTooManyJumpStatements:CommunityWorkshopParser.kt$for</ID>
     <ID>LoopWithTooManyJumpStatements:CommunityWorkshopRepository.kt$CommunityWorkshopRepository$for</ID>
+    <ID>LoopWithTooManyJumpStatements:LocalVideoPlayerScreen.kt$for</ID>
+    <ID>LoopWithTooManyJumpStatements:MemoryWeightedResourcePipeline.kt$MemoryWeightedResourcePipeline$while</ID>
+    <ID>LoopWithTooManyJumpStatements:SteamContentSdkSessionBackend.kt$SteamContentSdkSessionBackend$while</ID>
+    <ID>LoopWithTooManyJumpStatements:SteamContentSdkVideoStreamSession.kt$SteamContentSdkVideoStreamSession$for</ID>
+    <ID>LoopWithTooManyJumpStatements:SteamContentSdkWorkshopRepository.kt$SteamContentSdkWorkshopRepository$for</ID>
+    <ID>LoopWithTooManyJumpStatements:SteamDiscoverCollectionResolver.kt$for</ID>
+    <ID>LoopWithTooManyJumpStatements:SteamVideoStreamCache.kt$SteamVideoStreamCache$while</ID>
     <ID>LoopWithTooManyJumpStatements:SteamWorkshopThumbnailCache.kt$for</ID>
     <ID>MatchingDeclarationName:AboutWallHubContent.kt$WallHubPerson</ID>
     <ID>MatchingDeclarationName:AccountCollectionPaging.kt$AccountCollectionPageSelection&lt;T&gt;</ID>
-    <ID>MatchingDeclarationName:UnifiedWorkshopDetails.kt$SteamProfile</ID>
-    <ID>NestedBlockDepth:CommunityWorkshopRepository.kt$CommunityWorkshopRepository$private fun requestCommunityCommentsPage( workshopId: Long, start: Int, count: Int, ownerId: String, ): WorkshopCommentPage</ID>
-    <ID>NestedBlockDepth:SecureSteamSessionRuntime.kt$internal suspend fun SecureSteamSessionRepository.resolveSteamProfiles( steamSession: SteamClientSession, steamIds: Set&lt;Long&gt;, ): Map&lt;Long, SteamProfile&gt;</ID>
+    <ID>MatchingDeclarationName:MpkgConversionOptions.kt$MpkgConversionOption</ID>
+    <ID>MatchingDeclarationName:SteamAccessRefresh.kt$SteamAccessRefreshGate</ID>
+    <ID>MatchingDeclarationName:SteamWorkshopEngineQualifiers.kt$SteamAnonymousWorkshopEngine</ID>
+    <ID>MatchingDeclarationName:SteamWorkshopSessionGateway.kt$WorkshopSessionAccess</ID>
+    <ID>MatchingDeclarationName:TopLevelDestinations.kt$TopLevelDestination</ID>
+    <ID>MatchingDeclarationName:WallHubDivider.kt$WallHubDividerVariant</ID>
+    <ID>MatchingDeclarationName:WallHubNativeMediaHost.kt$WallHubNativeMediaFrame : FrameLayout</ID>
+    <ID>MatchingDeclarationName:WallHubPageLoading.kt$WallHubLoadingLayout</ID>
+    <ID>MatchingDeclarationName:WorkshopCommentInput.kt$NormalizedWorkshopCommentRequest</ID>
+    <ID>MatchingDeclarationName:WorkshopDetailReuse.kt$WorkshopDetailInteractionCache</ID>
+    <ID>MatchingDeclarationName:WorkshopQuerySemantics.kt$WorkshopSteamTagCriteria</ID>
+    <ID>NestedBlockDepth:CommunityWorkshopHtmlDetail.kt$private fun detailBlocks(html: String, className: String): List&lt;String&gt;</ID>
+    <ID>NestedBlockDepth:DeclarativeMaterialGraph.kt$DeclarativeMaterialGraph$private fun exceedsStructuralDepth(json: String): Boolean</ID>
+    <ID>NestedBlockDepth:GitHubAppUpdateRepository.kt$GitHubAppUpdateRepository$private suspend fun writeVerifiedReleaseBody( response: Response, release: AppReleaseInfo, partial: File, onProgress: (downloadedBytes: Long, totalBytes: Long) -&gt; Unit, )</ID>
+    <ID>NestedBlockDepth:NoSniTlsDialer.kt$NoSniTlsDialer$private fun authenticate( hostname: String, address: InetAddress, port: Int, openedSockets: ConcurrentLinkedQueue&lt;Socket&gt;?, hideSni: Boolean, webTarget: SteamWebDialTarget? = null, ): AuthenticatedSteamSocket</ID>
+    <ID>NestedBlockDepth:PkgFormat.kt$PkgReader$fun readIndex(file: File): PkgArchive</ID>
     <ID>NestedBlockDepth:SteamAccessRoutes.kt$SteamHostsParser$fun parse(text: String): Map&lt;String, List&lt;InetAddress&gt;&gt;</ID>
-    <ID>NestedBlockDepth:SteamWorkshopThumbnailCache.kt$SteamWorkshopThumbnailCache$private suspend fun fetchPreviewUrls(workshopIds: Set&lt;Long&gt;): Map&lt;Long, String&gt;</ID>
-    <ID>SwallowedException:FormalWorkshopDownloadWorker.kt$FormalWorkshopDownloadWorker$error: SteamDownloadCancelledException</ID>
-    <ID>SwallowedException:SecureSteamSessionRuntime.kt$error: TimeoutCancellationException</ID>
-    <ID>ThrowsCount:DownloadProxy.kt$internal fun parseDownloadProxy(raw: String): Proxy</ID>
-    <ID>ThrowsCount:SecureSteamSessionRuntime.kt$internal suspend fun &lt;T&gt; SecureSteamSessionRepository.awaitSteamRpc( steamSession: SteamClientSession, operation: String, block: suspend () -&gt; T, ): T</ID>
-    <ID>ThrowsCount:SecureSteamSessionRuntime.kt$internal suspend fun SecureSteamSessionRepository.restorePersistedSessionInternal(generation: Long)</ID>
-    <ID>ThrowsCount:SteamLoopbackTlsBridge.kt$internal fun parseSteamConnectRequest(headersText: String): ConnectRequest</ID>
+    <ID>NestedBlockDepth:SteamContentSdkWorkshopTransfer.kt$SteamContentSdkWorkshopTransfer$private suspend fun runTask( task: SteamContentSdkTask, destinationDirectory: File, options: SteamContentDownloadOptions, control: suspend () -&gt; SteamDownloadControl, onProgress: suspend (SteamDownloadProgress) -&gt; Unit, ): SteamContentDownloadResult</ID>
+    <ID>NestedBlockDepth:SteamRemoteVideoStream.kt$SteamRemoteVideoStream$private suspend fun fetchRangeBytes( start: Long, length: Int, prefetch: Boolean = false, ): ByteArray</ID>
+    <ID>NestedBlockDepth:SteamWorkshopContentClient.kt$private suspend fun downloadDirectFile( client: okhttp3.OkHttpClient, url: String, destination: File, expectedSize: Long, maxBytes: Long = MAX_DIRECT_FILE_BYTES, control: suspend () -&gt; SteamDownloadControl, playbackCoordinator: PlaybackDownloadCoordinator? = null, onChunkCommitted: (suspend () -&gt; Unit)? = null, onProgress: suspend (completedBytes: Long, totalBytes: Long, networkBytesRead: Long) -&gt; Unit, ): Long</ID>
+    <ID>NestedBlockDepth:SteamWorkshopVideoStreamRepository.kt$SteamWorkshopVideoStreamRepository$private suspend fun openSdkVideoStream( target: WorkshopContentTarget, request: WorkshopVideoOpenRequest, operationId: Long, diskCacheCapacityBytes: Long, ): WorkshopVideoStreamSession</ID>
+    <ID>NestedBlockDepth:StreamingSceneJson.kt$StreamingSceneJson.SliceParser$private fun readString(maxCapturedBytes: Int): String?</ID>
+    <ID>NestedBlockDepth:TexMobileConverter.kt$TexMobileConverter$private fun embeddedImageDimensions(header: ByteArray): Pair&lt;Int, Int&gt;?</ID>
+    <ID>NestedBlockDepth:TexMobileConverter.kt$TexMobileConverter$private fun encodeDownsampledEtc2( imageFile: File, sourceWidth: Int, sourceHeight: Int, targetWidth: Int, targetHeight: Int, checkCancellation: () -&gt; Unit, ): ByteArray</ID>
+    <ID>NestedBlockDepth:TexMobileConverter.kt$TexMobileConverter$private fun encodeEtc2( imageFile: File, width: Int, height: Int, checkCancellation: () -&gt; Unit, ): ByteArray</ID>
+    <ID>NestedBlockDepth:TexMobileConverter.kt$TexMobileConverter$private fun isVerifiedVideoTex( sourceFile: File, metadata: TexEntryMetadata, ): Boolean</ID>
+    <ID>NestedBlockDepth:TexMobileConverter.kt$TexMobileConverter$private fun resizeRgbaAreaAverage( rgba: ByteArray, sourceWidth: Int, sourceHeight: Int, targetWidth: Int, targetHeight: Int, ): ByteArray</ID>
+    <ID>NestedBlockDepth:WorkshopConversionDomain.kt$WorkshopConversionPlanner$private fun textureStrategy( scenePackage: File, entry: IndexedPkgEntry, policy: ConversionPolicy, device: DeviceCapabilityProfile, declaredSemantic: TextureSemantic?, ): Pair&lt;ResourceStrategy, String&gt;</ID>
+    <ID>NestedBlockDepth:WorkshopConverter.kt$ShaderCompatibility$private fun maskShaderCommentsAndStrings( source: String, checkCancellation: () -&gt; Unit, ): String</ID>
+    <ID>NestedBlockDepth:WorkshopConverter.kt$WorkshopConverter$private fun convertScene( inputDir: File, outputFile: File, checkCancellation: () -&gt; Unit, animatedImageDecoder: ((File, Int, Int, () -&gt; Unit) -&gt; ByteArray)?, staticImageDecoder: ((File, Int, Int, () -&gt; Unit) -&gt; ByteArray)?, plan: ConversionPlan? = null, shaderRewriter: ((String, () -&gt; Unit) -&gt; String)? = null, shaderRewriterWithPath: ((String, String, () -&gt; Unit) -&gt; String?)? = null, resourceCheckpoint: ConversionResourceCheckpoint? = null, timing: MpkgTimingSession? = null, ): WorkshopConversionReport</ID>
+    <ID>SpreadOperator:DiscoverResultsScreen.kt$(effect.messageRes, *effect.formatArgs.toTypedArray())</ID>
+    <ID>SpreadOperator:DownloadsScreen.kt$(effect.messageRes, *effect.formatArgs.toTypedArray())</ID>
+    <ID>SpreadOperator:HomeRoute.kt$(effect.messageRes, *effect.formatArgs.toTypedArray())</ID>
+    <ID>SpreadOperator:LibraryScreen.kt$(effect.messageRes, *effect.formatArgs.toTypedArray())</ID>
+    <ID>SpreadOperator:WorkshopDetailContract.kt$(resourceId, *args.toTypedArray())</ID>
+    <ID>SwallowedException:LibraryScreen.kt$LibraryViewModel$error: Throwable</ID>
+    <ID>SwallowedException:LibraryScreen.kt$LibraryViewModel$error: TimeoutCancellationException</ID>
+    <ID>ThrowingExceptionsWithoutMessageOrCause:LocalWallpaperScreen.kt$IllegalStateException()</ID>
+    <ID>ThrowsCount:DiscoverCuratorNoSniTransport.kt$DiscoverCuratorNoSniTransport$private suspend fun execute( target: CuratorTarget, address: Inet4Address, etag: String?, lastModified: String?, ): CuratorTransportResponse</ID>
+    <ID>ThrowsCount:DiscoverCuratorNoSniTransport.kt$private fun java.io.BufferedInputStream.readBoundedAsciiLine(limit: Int): String</ID>
+    <ID>ThrowsCount:DiscoverCuratorNoSniTransport.kt$private fun parseHttpResponse(responseStream: java.io.InputStream): CuratorTransportResponse</ID>
+    <ID>ThrowsCount:DownloadProxy.kt$private fun parseDownloadProxy(raw: String): Proxy</ID>
+    <ID>ThrowsCount:FormalWorkshopConversionWorker.kt$SafExportGateway$suspend fun exportFile( context: Context, outputTreeUri: Uri, source: File, transaction: ExportTransaction, persistTransaction: suspend (ExportTransaction) -&gt; Unit, ): String</ID>
+    <ID>ThrowsCount:GitHubAppUpdateRepository.kt$GitHubAppUpdateRepository$private suspend fun openReleaseAssetResponse( client: OkHttpClient, apiCall: Call, ): Response</ID>
+    <ID>ThrowsCount:GitHubAppUpdateRepository.kt$GitHubAppUpdateRepository$private suspend fun writeVerifiedReleaseBody( response: Response, release: AppReleaseInfo, partial: File, onProgress: (downloadedBytes: Long, totalBytes: Long) -&gt; Unit, )</ID>
+    <ID>ThrowsCount:GitHubNetworkClient.kt$GitHubNetworkClient$private fun resolvePublicIpv4(hostname: String): List&lt;InetAddress&gt;</ID>
+    <ID>ThrowsCount:LegacyExploreCuratorParser.kt$LegacyExploreCuratorParser$fun parse(json: String): ParsedCuratorMetadata</ID>
+    <ID>ThrowsCount:LocalVideoPlayerScreen.kt$LocalVideoPlayerViewModel$fun load()</ID>
+    <ID>ThrowsCount:MemoryWeightedResourcePipeline.kt$MemoryWeightedResourcePipeline$fun &lt;T, R&gt; execute( work: List&lt;ResourceWork&lt;T&gt;&gt;, checkCancellation: () -&gt; Unit, transform: (ResourceWork&lt;T&gt;, () -&gt; Unit) -&gt; R, ): List&lt;R&gt;</ID>
+    <ID>ThrowsCount:MpkgFormat.kt$MpkgWriter$fun write( entries: List&lt;MpkgInputEntry&gt;, outputFile: File, magic: String, checkCancellation: () -&gt; Unit = {}, ): MpkgManifest</ID>
+    <ID>ThrowsCount:PkgFormat.kt$PkgReader$fun readIndex(file: File): PkgArchive</ID>
+    <ID>ThrowsCount:SteamAccessDohResolver.kt$SteamAccessDohResolver.Companion.DnsWireReader$fun skipName()</ID>
+    <ID>ThrowsCount:SteamContentSdkSessionBackend.kt$SteamContentSdkSessionBackend$private fun ensureRecoveryLease( generation: Long, epoch: Long, )</ID>
+    <ID>ThrowsCount:SteamContentSdkWorkshopTransfer.kt$SteamContentSdkWorkshopTransfer$private suspend fun pauseAndAwaitTerminal( task: SteamContentSdkTask, acceptEvent: suspend (SteamContentSdkTaskEvent) -&gt; Unit = ::logSdkTaskEvent, )</ID>
+    <ID>ThrowsCount:SteamContentSdkWorkshopTransfer.kt$SteamContentSdkWorkshopTransfer$private suspend fun runTask( task: SteamContentSdkTask, destinationDirectory: File, options: SteamContentDownloadOptions, control: suspend () -&gt; SteamDownloadControl, onProgress: suspend (SteamDownloadProgress) -&gt; Unit, ): SteamContentDownloadResult</ID>
+    <ID>ThrowsCount:SteamDeviceSeedStore.kt$SteamDeviceSeedStore$@Throws(IOException::class) private fun persistAtomically(seed: ByteArray)</ID>
+    <ID>ThrowsCount:SteamLoopbackTlsBridge.kt$SteamLoopbackTlsBridge$private fun handle(clientSocket: Socket)</ID>
+    <ID>ThrowsCount:SteamLoopbackTlsBridge.kt$private fun parseSteamConnectRequest(headersText: String): ConnectRequest</ID>
+    <ID>ThrowsCount:SteamSessionRequestRecovery.kt$SteamSessionRequestRecovery$suspend fun &lt;T&gt; execute(request: () -&gt; T): T</ID>
+    <ID>ThrowsCount:WorkshopConverter.kt$WorkshopConverter$fun execute( plan: ConversionPlan, inputDir: File, outputFile: File, contentTypeHint: String? = null, checkCancellation: () -&gt; Unit = {}, animatedImageDecoder: ((File, Int, Int, () -&gt; Unit) -&gt; ByteArray)? = null, staticImageDecoder: ((File, Int, Int, () -&gt; Unit) -&gt; ByteArray)? = null, shaderRewriter: ((String, () -&gt; Unit) -&gt; String)? = null, shaderRewriterWithPath: ((String, String, () -&gt; Unit) -&gt; String?)? = null, resourceCheckpoint: ConversionResourceCheckpoint? = null, timing: MpkgTimingSession? = null, ): WorkshopConversionReport</ID>
     <ID>TooGenericExceptionCaught:AndroidKeystoreEncryptedStringStore.kt$AndroidKeystoreEncryptedStringStore$error: Throwable</ID>
+    <ID>TooGenericExceptionCaught:CommunityWorkshopRepository.kt$&lt;no name provided&gt;$error: Throwable</ID>
     <ID>TooGenericExceptionCaught:CommunityWorkshopRepository.kt$CommunityWorkshopRepository$error: Throwable</ID>
+    <ID>TooGenericExceptionCaught:DiscoverCuratorNoSniTransport.kt$DiscoverCuratorNoSniTransport$error: Exception</ID>
+    <ID>TooGenericExceptionCaught:DiscoverCuratorNoSniTransport.kt$DiscoverCuratorNoSniTransport$error: Throwable</ID>
+    <ID>TooGenericExceptionCaught:DiscoverFeedCoordinator.kt$DiscoverFeedCoordinator$error: Throwable</ID>
+    <ID>TooGenericExceptionCaught:DiscoverResultsScreen.kt$DiscoverResultsViewModel$error: Throwable</ID>
+    <ID>TooGenericExceptionCaught:DiscoverViewModel.kt$DiscoverViewModel$error: Throwable</ID>
     <ID>TooGenericExceptionCaught:DownloadConcurrencyGovernor.kt$DownloadConcurrencyGovernor$error: Throwable</ID>
+    <ID>TooGenericExceptionCaught:DownloadConcurrencyGovernor.kt$DownloadConcurrencyGovernor$failure: Throwable</ID>
+    <ID>TooGenericExceptionCaught:DownloadWorkScheduler.kt$error: Throwable</ID>
+    <ID>TooGenericExceptionCaught:FormalDownloadRunner.kt$FormalDownloadRunner$error: Throwable</ID>
+    <ID>TooGenericExceptionCaught:FormalDownloadRunner.kt$error: Throwable</ID>
     <ID>TooGenericExceptionCaught:FormalWorkshopConversionWorker.kt$FormalWorkshopConversionWorker$error: Throwable</ID>
     <ID>TooGenericExceptionCaught:FormalWorkshopConversionWorker.kt$PublicDownloadsExportGateway$error: Throwable</ID>
     <ID>TooGenericExceptionCaught:FormalWorkshopConversionWorker.kt$SafExportGateway$error: Throwable</ID>
-    <ID>TooGenericExceptionCaught:FormalWorkshopDownloadWorker.kt$FormalWorkshopDownloadWorker$error: Throwable</ID>
     <ID>TooGenericExceptionCaught:GitHubAppUpdateRepository.kt$GitHubAppUpdateRepository$error: Throwable</ID>
     <ID>TooGenericExceptionCaught:HomeViewModel.kt$HomeViewModel$error: Throwable</ID>
+    <ID>TooGenericExceptionCaught:HttpDiscoverCuratorRepository.kt$HttpDiscoverCuratorRepository$error: Exception</ID>
+    <ID>TooGenericExceptionCaught:HttpDiscoverCuratorRepository.kt$HttpDiscoverCuratorRepository$error: Throwable</ID>
     <ID>TooGenericExceptionCaught:LibraryScreen.kt$LibraryViewModel$error: Throwable</ID>
     <ID>TooGenericExceptionCaught:LocalWallpaperFileRepository.kt$LocalWallpaperFileRepository$error: Throwable</ID>
-    <ID>TooGenericExceptionCaught:LocalWallpaperViewModel.kt$LocalWallpaperViewModel$error: Throwable</ID>
+    <ID>TooGenericExceptionCaught:MemoryWeightedResourcePipeline.kt$MemoryWeightedResourcePipeline$error: Throwable</ID>
     <ID>TooGenericExceptionCaught:NoSniTlsDialer.kt$NoSniTlsDialer$error: Throwable</ID>
     <ID>TooGenericExceptionCaught:OnlineVideoPlayerScreen.kt$OnlineVideoPlayerViewModel$error: Throwable</ID>
+    <ID>TooGenericExceptionCaught:OnlineVideoPlayerScreen.kt$SteamChunkDataSource$error: Throwable</ID>
     <ID>TooGenericExceptionCaught:RoomDownloadTaskRepository.kt$RoomDownloadTaskRepository$error: Throwable</ID>
-    <ID>TooGenericExceptionCaught:SecureSteamSessionRuntime.kt$error: Throwable</ID>
-    <ID>TooGenericExceptionCaught:SettingsViewModel.kt$SettingsViewModel$error: Throwable</ID>
     <ID>TooGenericExceptionCaught:SteamAccessManager.kt$SteamAccessManager$error: Throwable</ID>
-    <ID>TooGenericExceptionCaught:SteamContentDownloader.kt$SteamContentDownloader$error: Throwable</ID>
-    <ID>TooGenericExceptionCaught:SteamContentTransfer.kt$CdnAuthTokenProvider$error: Throwable</ID>
-    <ID>TooGenericExceptionCaught:SteamContentTransfer.kt$error: Throwable</ID>
+    <ID>TooGenericExceptionCaught:SteamContentSdkSessionBackend.kt$SteamContentSdkSessionBackend$error: Throwable</ID>
+    <ID>TooGenericExceptionCaught:SteamContentSdkSessionPlatform.kt$SteamContentSdkEnginePlatform$error: Exception</ID>
+    <ID>TooGenericExceptionCaught:SteamContentSdkSessionPlatform.kt$SteamContentSdkEnginePlatformSession$error: Exception</ID>
+    <ID>TooGenericExceptionCaught:SteamContentSdkWorkshopRepository.kt$SteamContentSdkWorkshopRepository$error: Throwable</ID>
+    <ID>TooGenericExceptionCaught:SteamContentSdkWorkshopTransfer.kt$SteamContentSdkWorkshopTransfer$error: Throwable</ID>
+    <ID>TooGenericExceptionCaught:SteamDeviceSeedStore.kt$SteamDeviceSeedStore$error: RuntimeException</ID>
     <ID>TooGenericExceptionCaught:SteamLoopbackTlsBridge.kt$SteamLoopbackTlsBridge$error: Throwable</ID>
+    <ID>TooGenericExceptionCaught:SteamNetworkDiagnosticInterceptor.kt$SteamNetworkDiagnosticInterceptor$error: Throwable</ID>
+    <ID>TooGenericExceptionCaught:SteamPersonaCache.kt$SteamPersonaCache$throwable: Throwable</ID>
+    <ID>TooGenericExceptionCaught:SteamRemoteVideoStream.kt$SteamRemoteVideoStream$error: Exception</ID>
+    <ID>TooGenericExceptionCaught:SteamSessionRequestRecovery.kt$SteamSessionRequestRecovery$failure: Throwable</ID>
+    <ID>TooGenericExceptionCaught:SteamWorkshopAccountMutations.kt$SteamWorkshopAccountMutations$failure: Throwable</ID>
+    <ID>TooGenericExceptionCaught:SteamWorkshopContentApi.kt$SteamWorkshopContentApi.&lt;no name provided&gt;$error: Throwable</ID>
+    <ID>TooGenericExceptionCaught:SteamWorkshopContentClient.kt$FormalSteamWorkshopContentGateway$error: Throwable</ID>
+    <ID>TooGenericExceptionCaught:SteamWorkshopReadCoordinator.kt$SteamWorkshopReadCoordinator$caught: Throwable</ID>
+    <ID>TooGenericExceptionCaught:SteamWorkshopThumbnailCache.kt$SteamWorkshopThumbnailCache$error: Throwable</ID>
+    <ID>TooGenericExceptionCaught:SteamWorkshopVideoStreamRepository.kt$SteamWorkshopVideoStreamRepository$error: Throwable</ID>
     <ID>TooGenericExceptionCaught:WallHubApplication.kt$WallHubApplication$error: Throwable</ID>
+    <ID>TooGenericExceptionCaught:WallHubApplication.kt$error: Throwable</ID>
+    <ID>TooGenericExceptionCaught:WallHubSetupWizard.kt$WallHubSetupViewModel$error: Exception</ID>
+    <ID>TooGenericExceptionCaught:WorkshopConverter.kt$WorkshopConverter$error: Exception</ID>
     <ID>TooGenericExceptionCaught:WorkshopDetailViewModel.kt$WorkshopDetailViewModel$error: Throwable</ID>
-    <ID>UseCheckOrError:LibraryScreen.kt$LibraryViewModel$throw lastFailure ?: IllegalStateException("无法读取个人资料库")</ID>
-    <ID>UseCheckOrError:SecureSteamSessionRuntime.kt$throw IllegalStateException("Steam 请求超时，请稍后重试")</ID>
-    <ID>UseCheckOrError:SecureSteamSessionRuntime.kt$throw lastFailure ?: IllegalStateException("Steam session restore failed")</ID>
+    <ID>TooGenericExceptionCaught:WorkshopThumbnailFetcher.kt$WorkshopThumbnailFetcher$error: Throwable</ID>
+    <ID>UnusedParameter:AppearanceSettingsContent.kt$availableAccents: List&lt;AccentPreference&gt;</ID>
+    <ID>UnusedParameter:AppearanceSettingsContent.kt$customAccentColor: String</ID>
+    <ID>UnusedParameter:AppearanceSettingsContent.kt$onAccentChange: (AccentPreference, String?) -&gt; Unit</ID>
+    <ID>UnusedParameter:AppearanceSettingsContent.kt$onCustomAccentColorChanged: (String) -&gt; Unit</ID>
+    <ID>UnusedParameter:AppearanceSettingsContent.kt$onOpenThemeEditor: () -&gt; Unit = {}</ID>
+    <ID>UnusedParameter:AppearanceSettingsContent.kt$onSystemMonetEnabledChange: (Boolean) -&gt; Unit</ID>
+    <ID>UnusedParameter:AppearanceSettingsContent.kt$onThemePreferenceChange: (ThemePreference) -&gt; Unit</ID>
+    <ID>UnusedParameter:AppearanceSettingsContent.kt$onThemedLauncherIconEnabledChange: (Boolean) -&gt; Unit</ID>
+    <ID>UnusedParameter:AppearanceSettingsContent.kt$onVisualStyleChange: (VisualStyle) -&gt; Unit</ID>
+    <ID>UnusedParameter:AppearanceSettingsContent.kt$systemMonetColor: Color</ID>
+    <ID>UnusedParameter:DownloadsScreen.kt$onOpenSettings: () -&gt; Unit = {}</ID>
+    <ID>UnusedParameter:HomeScreen.kt$bottomNavigationCollapsed: Boolean</ID>
+    <ID>UnusedParameter:HomeScreen.kt$chromeHidden: Boolean</ID>
+    <ID>UnusedParameter:HomeScreen.kt$filtersCollapsed: Boolean</ID>
+    <ID>UnusedParameter:HomeScreen.kt$onOpenSettings: (() -&gt; Unit)?</ID>
+    <ID>UnusedParameter:LocalWallpaperScreen.kt$onOpenSettings: () -&gt; Unit</ID>
+    <ID>UnusedParameter:LocalWallpaperScreen.kt$state: LocalWallpaperUiState</ID>
+    <ID>UnusedParameter:WallHubNavigationLayout.kt$expanded: Boolean</ID>
+    <ID>UnusedParameter:WallHubNavigationLayout.kt$modalContentActive: Boolean</ID>
+    <ID>UnusedParameter:WallHubNavigationLayout.kt$onExpandedChange: (Boolean) -&gt; Unit</ID>
+    <ID>UnusedParameter:WallHubPageLoading.kt$layout: WallHubLoadingLayout</ID>
+    <ID>UnusedParameter:WallHubTheme.kt$colorScheme: ColorScheme</ID>
+    <ID>UnusedParameter:WorkshopConverter.kt$WorkshopConverter$contentTypeHint: String? = null</ID>
+    <ID>UnusedParameter:WorkshopDetailLargeWorkspace.kt$isLoadingInteraction: Boolean</ID>
+    <ID>UnusedParameter:WorkshopDetailScreen.kt$onCommentsVisible: () -&gt; Unit</ID>
+    <ID>UnusedPrivateMember:FormalDownloadRunner.kt$private fun String.toDownloadStatus(): DownloadStatus</ID>
+    <ID>UnusedPrivateMember:FormalWorkshopConversionWorker.kt$FormalWorkshopConversionWorker$private fun stableFailureCode(message: String): String</ID>
+    <ID>UnusedPrivateMember:SteamAccessRouteStore.kt$SteamAccessRouteStore$private fun legacyKey( networkType: String, hostname: String, ): String</ID>
+    <ID>UnusedPrivateMember:TexMobileConverter.kt$TexMobileConverter$private fun isSafeColorTexturePath(path: String): Boolean</ID>
+    <ID>UnusedPrivateProperty:DiscoverFeedCoordinator.kt$DiscoverFeedCoordinator$private val networkBudget: DiscoverNetworkBudget</ID>
+    <ID>UnusedPrivateProperty:DiscoverFeedCoordinator.kt$private const val DISCOVER_NETWORK_CONCURRENCY = 4</ID>
+    <ID>UnusedPrivateProperty:DiscoverResultsScreen.kt$private const val DISCOVER_RESULTS_TOGGLE_MOTION_MS = 220</ID>
+    <ID>UnusedPrivateProperty:DiscoverResultsScreen.kt$private val DISCOVER_RESULTS_TOGGLE_BUTTON_SIZE = 42.dp</ID>
+    <ID>UnusedPrivateProperty:DiscoverResultsScreen.kt$private val DISCOVER_RESULTS_TOGGLE_HEIGHT = 48.dp</ID>
+    <ID>UnusedPrivateProperty:DiscoverResultsScreen.kt$private val DISCOVER_RESULTS_TOGGLE_INSET = 3.dp</ID>
+    <ID>UnusedPrivateProperty:DiscoverResultsScreen.kt$private val DISCOVER_RESULTS_TOGGLE_WIDTH = 90.dp</ID>
+    <ID>UnusedPrivateProperty:FormalDownloadRunner.kt$FormalDownloadRunner.Companion$private const val PAUSE_POLL_INTERVAL_MS = 250L</ID>
+    <ID>UnusedPrivateProperty:HomeScreen.kt$val gridStatisticsAvailableWidth = (gridCardWidth - GRID_CARD_COPY_HORIZONTAL_PADDING).coerceAtLeast(WallHubSpacing.none)</ID>
+    <ID>UnusedPrivateProperty:HomeScreen.kt$val listStatisticsAvailableWidth = ( contentWidth - LIST_CARD_MEDIA_SIZE - LIST_CARD_ACTION_SIZE - LIST_CARD_ACTION_END_PADDING - LIST_CARD_COPY_HORIZONTAL_PADDING ).coerceAtLeast(WallHubSpacing.none)</ID>
+    <ID>UnusedPrivateProperty:LocalWallpaperScreen.kt$val filterDrawerTitle = stringResource(R.string.local_filter_title)</ID>
+    <ID>UnusedPrivateProperty:SteamContentSdkWorkshopRepository.kt$SteamContentSdkWorkshopRepository$private val accountPublicDetailsReader = publicDetailsReader(engine, gateway)</ID>
+    <ID>UnusedPrivateProperty:WallHubTheme.kt$private const val MONET_CONTRAST_LEVEL = 0.0</ID>
+    <ID>UnusedPrivateProperty:WorkshopConversionDomain.kt$private const val GIB = 1024L * MIB</ID>
+    <ID>UnusedPrivateProperty:WorkshopDetailScreen.kt$val unknown = stringResource(R.string.detail_unknown)</ID>
+    <ID>UseCheckOrError:SteamWorkshopAccountMutations.kt$SteamWorkshopAccountMutations$throw lastFailure ?: IllegalStateException("Steam did not confirm the requested subscription state")</ID>
+    <ID>UseRequire:LegacyExploreCuratorParser.kt$LegacyExploreCuratorParser$throw IllegalArgumentException("response.items has no supported descriptors")</ID>
+    <ID>UseRequire:SteamAccessDohResolver.kt$SteamAccessDohResolver.Companion.DnsWireReader$throw IllegalArgumentException("DNS compression pointer exceeds response")</ID>
+    <ID>UseRequire:SteamAccessDohResolver.kt$SteamAccessDohResolver.Companion.DnsWireReader$throw IllegalArgumentException("DNS label exceeds response")</ID>
+    <ID>UseRequire:SteamAccessDohResolver.kt$SteamAccessDohResolver.Companion.DnsWireReader$throw IllegalArgumentException("DNS name exceeds response")</ID>
+    <ID>UseRequire:SteamAccessDohResolver.kt$SteamAccessDohResolver.Companion.DnsWireReader$throw IllegalArgumentException("Invalid DNS compression pointer")</ID>
   </CurrentIssues>
 </SmellBaseline>
