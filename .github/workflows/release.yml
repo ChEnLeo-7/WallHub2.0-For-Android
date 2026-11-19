@@ -70,6 +70,10 @@ jobs:
           curl -sSL -o "$RUNNER_TEMP/gradle.zip" https://services.gradle.org/distributions/gradle-8.12.1-bin.zip
           unzip -q "$RUNNER_TEMP/gradle.zip" -d "$RUNNER_TEMP"
           echo "GRADLE_PATH=$RUNNER_TEMP/gradle-8.12.1/bin/gradle" >> "$GITHUB_ENV"
+      - name: Prefetch Steam Content SDK Rust dependencies
+        run: |
+          cd steam-content-sdk
+          cargo fetch --locked
       - name: Stage locked native dependencies
         env:
           ANDROID_NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/27.0.12077973
