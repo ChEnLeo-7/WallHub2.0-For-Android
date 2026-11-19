@@ -209,10 +209,10 @@ fun WorkshopSort.steamQueryType(): Int =
 fun String.validSteamAuthorIdOrNull(): Long? =
     trim().takeIf { it.matches(Regex("^7656119[0-9]{10}$")) }?.toLongOrNull()
 
-val VISIBLE_WORKSHOP_TYPES = setOf(WorkshopType.SCENE, WorkshopType.VIDEO, WorkshopType.WEB)
+private val VISIBLE_WORKSHOP_TYPES = setOf(WorkshopType.SCENE, WorkshopType.VIDEO, WorkshopType.WEB)
 val STEAM_WORKSHOP_TYPE_TAGS = setOf("Scene", "Video", "Web", "Application")
 val STEAM_CONTENT_RATING_TAGS = setOf("Everyone", "Questionable", "Mature")
-val BLOCKED_WORKSHOP_TAGS =
+private val BLOCKED_WORKSHOP_TAGS =
     setOf("Mature", "Adult Only Sexual Content", "Sexual Content", "Nudity", "R18", "NSFW")
 private val BLOCKED_WORKSHOP_TAGS_LOWERCASE = BLOCKED_WORKSHOP_TAGS.map { it.lowercase(Locale.ROOT) }.toSet()
 
@@ -244,7 +244,7 @@ val WORKSHOP_RESOLUTION_TAG_MAP =
         "Other resolution" to "Other resolution",
         "Dynamic resolution" to "Dynamic resolution",
     )
-val STEAM_WORKSHOP_RESOLUTION_TAGS = WORKSHOP_RESOLUTION_TAG_MAP.values.toSet()
+private val STEAM_WORKSHOP_RESOLUTION_TAGS = WORKSHOP_RESOLUTION_TAG_MAP.values.toSet()
 
 const val MAX_WORKSHOP_DETAIL_SEARCH_TAGS = 12
 const val MAX_WORKSHOP_QUERY_TAGS = 48

@@ -998,7 +998,7 @@ private fun FabAction(
 }
 
 @Composable
-internal fun DownloadsTypeFilterMenu(
+private fun DownloadsTypeFilterMenu(
     expanded: Boolean,
     onDismiss: () -> Unit,
     selectedTypes: Set<WorkshopType>,
@@ -1021,7 +1021,7 @@ internal fun DownloadsTypeFilterMenu(
 }
 
 @Composable
-internal fun DownloadsTypeFilterMenuItems(
+private fun DownloadsTypeFilterMenuItems(
     selectedTypes: Set<WorkshopType>,
     onSelect: (Set<WorkshopType>) -> Unit,
 ) {

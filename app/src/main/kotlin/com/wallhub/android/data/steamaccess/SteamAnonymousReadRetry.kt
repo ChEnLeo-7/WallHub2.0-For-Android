@@ -25,7 +25,7 @@ internal class SteamAnonymousReadRetry(
     }
 }
 
-internal fun mayRetryAnonymousSteamRead(request: Request, error: IOException, canceled: Boolean): Boolean {
+private fun mayRetryAnonymousSteamRead(request: Request, error: IOException, canceled: Boolean): Boolean {
     if (canceled || request.url.scheme != "https" || request.url.port != 443) return false
     if (request.url.username.isNotEmpty() || request.url.password.isNotEmpty()) return false
     if (request.headers.names().any {
@@ -74,7 +74,7 @@ internal fun mayRetryAnonymousSteamRead(request: Request, error: IOException, ca
     }
 }
 
-internal fun isAnonymousSteamDirectoryRequest(
+private fun isAnonymousSteamDirectoryRequest(
     connectAuthority: String,
     requestHead: String,
 ): Boolean =
@@ -90,7 +90,7 @@ internal fun isAnonymousSteamDetailsRequest(
         requestHead.startsWith("POST $STEAM_DETAILS_PATH HTTP/1.1\r\n", ignoreCase = false) &&
         mayUseSteamWebAlias(connectAuthority, requestHead)
 
-internal fun isAnonymousCommunityBrowseRequest(
+private fun isAnonymousCommunityBrowseRequest(
     connectAuthority: String,
     requestHead: String,
 ): Boolean =
@@ -101,7 +101,7 @@ internal fun isAnonymousCommunityBrowseRequest(
         } &&
         mayUseSteamWebAlias(connectAuthority, requestHead)
 
-internal fun isAnonymousWorkshopImageRequest(
+private fun isAnonymousWorkshopImageRequest(
     connectAuthority: String,
     requestHead: String,
 ): Boolean =

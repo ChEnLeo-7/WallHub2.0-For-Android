@@ -50,7 +50,7 @@ internal enum class SteamRequestRecoveryCause {
  * error. Keep matching deliberately narrow: remote refusals, bounds errors, and arbitrary transport failures
  * must not become implicit retries here.
  */
-internal fun steamRequestRecoveryCause(error: Throwable): SteamRequestRecoveryCause? {
+private fun steamRequestRecoveryCause(error: Throwable): SteamRequestRecoveryCause? {
     val message = error.message?.lowercase() ?: return null
     return when {
         "the request was refused before it was sent" in message ->

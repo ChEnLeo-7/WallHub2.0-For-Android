@@ -116,7 +116,7 @@ class SteamHttpClientFactory
         }
     }
 
-internal fun isSteamSecureScheme(scheme: String?): Boolean =
+private fun isSteamSecureScheme(scheme: String?): Boolean =
     scheme.equals("https", ignoreCase = true) || scheme.equals("wss", ignoreCase = true)
 
 /**

@@ -446,7 +446,7 @@ internal fun SteamAccessDohEndpointsSetting(
 }
 
 @Composable
-internal fun SteamAccessDohEditor(
+private fun SteamAccessDohEditor(
     endpoints: List<String>,
     disabledEndpoints: Set<String>,
     endpointStatuses: List<com.wallhub.android.core.model.SteamDohEndpointStatus>,
@@ -722,7 +722,7 @@ internal fun SteamAccessDohEditor(
 }
 
 @Composable
-internal fun SteamAccessDohEndpointItem(
+private fun SteamAccessDohEndpointItem(
     endpoint: String,
     displayName: String,
     enabled: Boolean,

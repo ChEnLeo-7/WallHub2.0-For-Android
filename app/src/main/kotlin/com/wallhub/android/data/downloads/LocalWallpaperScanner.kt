@@ -286,7 +286,7 @@ internal data class ProjectNodeAssignments(
 )
 
 /** Assigns each node to its nearest ancestor project in one path-indexed pass. */
-internal fun assignNodesToNearestProjects(nodes: List<ScanNode>): ProjectNodeAssignments {
+private fun assignNodesToNearestProjects(nodes: List<ScanNode>): ProjectNodeAssignments {
     val projectParents =
         nodes
             .groupBy(ScanNode::parentPath)
@@ -314,7 +314,7 @@ internal fun assignNodesToNearestProjects(nodes: List<ScanNode>): ProjectNodeAss
     )
 }
 
-internal fun nearestProjectParent(
+private fun nearestProjectParent(
     relativePath: String,
     projectParents: Set<String>,
 ): String? {
@@ -497,7 +497,7 @@ internal fun LocalWallpaperFileRepository.inspectMpkg(node: ScanNode): PackageIn
         )
     }
 
-internal fun workshopTypeForMpkgMagic(magic: String): WorkshopType =
+private fun workshopTypeForMpkgMagic(magic: String): WorkshopType =
     when (magic) {
         SCENE_MPKG_MAGIC -> WorkshopType.SCENE
         VIDEO_MPKG_MAGIC -> WorkshopType.VIDEO
@@ -579,7 +579,7 @@ internal fun LocalWallpaperFileRepository.parseProjectMetadata(json: String): Pr
         )
     }.getOrNull()
 
-internal fun wallHubConversionPresetFor(
+private fun wallHubConversionPresetFor(
     contentUri: String,
     tasks: List<FormalTaskRecordEntity>,
 ): MpkgConversionPreset? {
@@ -728,11 +728,11 @@ internal const val MAX_PACKAGE_PATH_LENGTH = 16 * 1024
 internal const val MAX_PACKAGE_ENTRY_COUNT = 200_000L
 internal const val MAX_ZIP_ENTRIES_TO_INSPECT = 4_096
 internal const val MAX_PROJECT_JSON_BYTES = 1024 * 1024
-internal val WORKSHOP_ID_PATTERN = Regex("(?:^|[-_ ])(\\d{5,})(?=$|[-_ ])")
+private val WORKSHOP_ID_PATTERN = Regex("(?:^|[-_ ])(\\d{5,})(?=$|[-_ ])")
 internal val VIDEO_EXTENSIONS = setOf("mp4", "webm", "mkv", "mov", "avi", "m4v")
-internal val HTML_EXTENSIONS = setOf("html", "htm")
-internal val UNKNOWN_ARCHIVE_EXTENSIONS = setOf("bin", "dat", "pak", "archive")
-internal val SIDECAR_EXTENSIONS =
+private val HTML_EXTENSIONS = setOf("html", "htm")
+private val UNKNOWN_ARCHIVE_EXTENSIONS = setOf("bin", "dat", "pak", "archive")
+private val SIDECAR_EXTENSIONS =
     setOf(
         "jpg",
         "jpeg",
@@ -763,29 +763,29 @@ internal fun java.io.InputStream.readLimited(maxBytes: Int): ByteArray {
     return buffer.copyOf(offset)
 }
 
-internal fun FileChannel.readUnsignedIntLe(): Long = Integer.toUnsignedLong(readIntLe())
+private fun FileChannel.readUnsignedIntLe(): Long = Integer.toUnsignedLong(readIntLe())
 
-internal fun FileChannel.readIntLe(): Int {
+private fun FileChannel.readIntLe(): Int {
     val buffer = ByteBuffer.allocate(Int.SIZE_BYTES).order(ByteOrder.LITTLE_ENDIAN)
     readFully(buffer)
     buffer.flip()
     return buffer.int
 }
 
-internal fun FileChannel.readLengthString(maxLength: Int): String {
+private fun FileChannel.readLengthString(maxLength: Int): String {
     val length = readIntLe()
     require(length in 0..maxLength) { "Invalid string length: $length" }
     return readBytes(length).toString(Charsets.UTF_8)
 }
 
-internal fun FileChannel.readBytes(length: Int): ByteArray {
+private fun FileChannel.readBytes(length: Int): ByteArray {
     require(length >= 0) { "Invalid read length" }
     val buffer = ByteBuffer.allocate(length)
     readFully(buffer)
     return buffer.array()
 }
 
-internal fun FileChannel.readFully(buffer: ByteBuffer) {
+private fun FileChannel.readFully(buffer: ByteBuffer) {
     while (buffer.hasRemaining()) {
         require(read(buffer) >= 0) { "Incomplete file content" }
     }

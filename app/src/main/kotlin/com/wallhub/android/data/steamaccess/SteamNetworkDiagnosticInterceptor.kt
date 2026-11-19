@@ -82,7 +82,7 @@ internal class SteamNetworkDiagnosticInterceptor(
     }
 }
 
-internal fun steamNetworkOperation(host: String, encodedPath: String): String =
+private fun steamNetworkOperation(host: String, encodedPath: String): String =
     when {
         host == "api.steampowered.com" &&
             encodedPath == "/ISteamRemoteStorage/GetPublishedFileDetails/v1/" -> "public_details"
@@ -96,7 +96,7 @@ internal fun steamNetworkOperation(host: String, encodedPath: String): String =
         else -> GENERIC_STEAM_HTTP_OPERATION
     }
 
-internal fun steamNetworkResourceId(host: String, encodedPath: String): String? {
+private fun steamNetworkResourceId(host: String, encodedPath: String): String? {
     if (host != "steamcommunity.com" || !encodedPath.startsWith(COMMENT_PATH_PREFIX)) return null
     val segments = encodedPath.removePrefix(COMMENT_PATH_PREFIX).trimEnd('/').split('/')
     if (segments.size != 2 || segments.any { segment -> segment != "-1" && !segment.all(Char::isDigit) }) return null

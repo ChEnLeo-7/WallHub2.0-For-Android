@@ -380,7 +380,7 @@ fun WorkshopDetailScreen(
 }
 
 @Composable
-internal fun FullscreenWallpaperVideoPlayer(
+private fun FullscreenWallpaperVideoPlayer(
     playback: SteamChunkPlayback,
     onFullscreenChange: (Boolean) -> Unit,
     onRetry: () -> Unit,
@@ -407,7 +407,7 @@ internal fun FullscreenWallpaperVideoPlayer(
     ExperimentalMaterial3Api::class,
 )
 @Composable
-internal fun WorkshopDetailPagerContent(
+private fun WorkshopDetailPagerContent(
     detail: WorkshopDetail,
     interaction: WorkshopInteraction,
     isLoadingInteraction: Boolean,
@@ -579,7 +579,7 @@ internal fun WorkshopDetailPagerContent(
     ExperimentalMaterial3Api::class,
 )
 @Composable
-internal fun WorkshopDetailPane(
+private fun WorkshopDetailPane(
     detail: WorkshopDetail,
     pagerState: androidx.compose.foundation.pager.PagerState,
     nestedScrollConnection: NestedScrollConnection,
@@ -934,7 +934,7 @@ internal fun WorkshopDetailPane(
 }
 
 @Composable
-internal fun WorkshopDetailCollapsibleHeader(
+private fun WorkshopDetailCollapsibleHeader(
     detail: WorkshopDetail,
     offsetPx: Float,
     onHeaderHeightChanged: (Int) -> Unit,
@@ -1079,7 +1079,7 @@ internal fun ColumnScope.WorkshopDetailTabPager(
 }
 
 @Composable
-internal fun CollapsibleDetailHeader(
+private fun CollapsibleDetailHeader(
     offsetPx: Float,
     onHeightChanged: (Int) -> Unit,
     modifier: Modifier = Modifier,
@@ -1280,13 +1280,13 @@ internal fun DetailCover(
 }
 
 @Composable
-internal fun DetailDivider() {
+private fun DetailDivider() {
     WallHubHorizontalDivider(variant = WallHubDividerVariant.Subtle)
 }
 
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
-internal fun DetailTab(
+private fun DetailTab(
     selected: Boolean,
     text: String,
     onClick: () -> Unit,

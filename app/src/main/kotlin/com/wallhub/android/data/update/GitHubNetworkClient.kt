@@ -87,7 +87,7 @@ internal class GitHubNetworkClient
         }
     }
 
-internal fun parseGitHubPublicIpv4Answers(payload: String): List<InetAddress> {
+private fun parseGitHubPublicIpv4Answers(payload: String): List<InetAddress> {
     val root = runCatching { JSONObject(payload) }.getOrNull() ?: return emptyList()
     if (root.optInt("Status", -1) != 0) return emptyList()
     val answers = root.optJSONArray("Answer") ?: return emptyList()

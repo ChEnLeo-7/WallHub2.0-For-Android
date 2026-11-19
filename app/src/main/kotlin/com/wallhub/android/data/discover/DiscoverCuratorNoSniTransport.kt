@@ -218,7 +218,7 @@ internal data class CuratorTarget(
     val path: String,
 )
 
-internal fun requireCuratorTarget(url: String): CuratorTarget {
+private fun requireCuratorTarget(url: String): CuratorTarget {
     val parsed = runCatching { java.net.URI(url) }.getOrElse { throw IllegalArgumentException("Invalid Curator URL", it) }
     val host = parsed.host?.lowercase()?.trimEnd('.')
     require(parsed.scheme == "https") { "Curator URL must use HTTPS" }
@@ -231,13 +231,13 @@ internal fun requireCuratorTarget(url: String): CuratorTarget {
     return CuratorTarget(requireNotNull(host), CURATOR_PATH)
 }
 
-internal fun hiddenSniParameters(base: javax.net.ssl.SSLParameters): javax.net.ssl.SSLParameters =
+private fun hiddenSniParameters(base: javax.net.ssl.SSLParameters): javax.net.ssl.SSLParameters =
     base.apply {
         endpointIdentificationAlgorithm = null
         serverNames = Collections.emptyList()
     }
 
-internal fun parsePublicIpv4Answers(payload: String): List<Inet4Address> {
+private fun parsePublicIpv4Answers(payload: String): List<Inet4Address> {
     val root = runCatching { JSONObject(payload) }.getOrNull() ?: return emptyList()
     if (root.optInt("Status", -1) != 0) return emptyList()
     val answers = root.optJSONArray("Answer") ?: return emptyList()
@@ -270,7 +270,7 @@ private fun isPublicCuratorIpv4(bytes: List<Int>): Boolean =
         else -> true
     }
 
-internal fun parseHttpResponse(responseStream: java.io.InputStream): CuratorTransportResponse {
+private fun parseHttpResponse(responseStream: java.io.InputStream): CuratorTransportResponse {
     val input = responseStream.buffered()
     val statusLine = input.readBoundedAsciiLine(MAX_STATUS_LINE_BYTES)
     val match = STATUS_LINE.matchEntire(statusLine) ?: throw IOException("Malformed Curator HTTP status line")

@@ -63,10 +63,10 @@ internal data class HomeCoverPrefetchCandidate(
     val previewUrl: String,
 )
 
-internal fun normalizeHomeCoverPreviewUrl(previewUrl: String?): String? =
+private fun normalizeHomeCoverPreviewUrl(previewUrl: String?): String? =
     previewUrl?.trim()?.takeIf(String::isNotEmpty)
 
-internal fun selectHomeCoverPrefetchCandidates(
+private fun selectHomeCoverPrefetchCandidates(
     items: List<WorkshopSummary>,
     lastVisibleIndex: Int,
     columns: Int,
@@ -195,7 +195,7 @@ internal data class HomeCoverPrefetchResult(
     val failed: Int,
 )
 
-internal suspend fun prefetchHomeWorkshopCovers(
+private suspend fun prefetchHomeWorkshopCovers(
     imageLoader: ImageLoader,
     context: Context,
     candidates: List<HomeCoverPrefetchCandidate>,

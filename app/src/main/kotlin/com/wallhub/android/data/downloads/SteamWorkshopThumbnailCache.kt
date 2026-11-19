@@ -310,7 +310,7 @@ internal suspend fun Call.awaitThumbnailResponse(): Response =
         )
     }
 
-internal fun parsePreviewUrls(body: String): Map<Long, String> {
+private fun parsePreviewUrls(body: String): Map<Long, String> {
     val details =
         JSONObject(body)
             .optJSONObject("response")

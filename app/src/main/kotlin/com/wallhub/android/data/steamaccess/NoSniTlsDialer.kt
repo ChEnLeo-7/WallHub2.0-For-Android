@@ -23,7 +23,7 @@ import javax.net.ssl.SSLPeerUnverifiedException
 import javax.net.ssl.SSLSocket
 import javax.net.ssl.SSLSocketFactory
 
-internal fun visibleSteamTlsParameters(
+private fun visibleSteamTlsParameters(
     target: SteamWebDialTarget,
     base: SSLParameters = SSLParameters(),
 ): SSLParameters =
@@ -32,7 +32,7 @@ internal fun visibleSteamTlsParameters(
         serverNames = listOf(SNIHostName(target.rule.tlsAuthority))
     }
 
-internal fun verifySteamTlsPeer(
+private fun verifySteamTlsPeer(
     target: SteamWebDialTarget,
     hostnameVerifier: HostnameVerifier,
     session: SSLSession,

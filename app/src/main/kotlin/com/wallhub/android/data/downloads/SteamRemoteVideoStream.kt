@@ -46,7 +46,7 @@ private fun isTrustedSteamFileHost(hostname: String): Boolean {
     return TRUSTED_STEAM_FILE_SUFFIXES.any { suffix -> host == suffix || host.endsWith(".$suffix") }
 }
 
-internal fun parseContentRangeTotal(contentRange: String?): Long? {
+private fun parseContentRangeTotal(contentRange: String?): Long? {
     val total = contentRange?.substringAfterLast('/')?.trim().orEmpty()
     if (total.isEmpty() || total == "*") return null
     return total.toLongOrNull()?.takeIf { it > 0L }

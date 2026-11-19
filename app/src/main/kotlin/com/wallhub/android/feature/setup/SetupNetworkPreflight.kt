@@ -624,7 +624,7 @@ private fun Exception.shortProbeReason(): String =
     (message ?: javaClass.simpleName).replace(Regex("\\s+"), " ").take(96)
 
 /** A plan's identity for "did the egress move under this measurement?" - generation and egress kind. */
-internal fun egressSnapshotKey(plan: SteamEgressPlan): String =
+private fun egressSnapshotKey(plan: SteamEgressPlan): String =
     "${plan.generation}:${plan.egressIdentity ?: "undecided"}"
 
 /**
@@ -665,7 +665,7 @@ internal suspend fun runSetupNetworkCheckOnLatestEgress(
  * The page therefore says "failed" with the stage that actually happened, which is the one thing a
  * timeout-shaped result must never do: invent a Direct verdict for a network whose egress is unknown.
  */
-internal fun setupEgressUndecidedResult(): SetupNetworkPreflightResult =
+private fun setupEgressUndecidedResult(): SetupNetworkPreflightResult =
     SetupNetworkPreflightResult(
         overallStatus = SetupNetworkOverallStatus.WARNING,
         items =

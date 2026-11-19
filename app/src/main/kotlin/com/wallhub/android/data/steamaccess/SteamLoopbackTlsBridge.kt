@@ -22,7 +22,7 @@ import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
 
-internal fun steamWebFirstResponseTimeoutMillis(
+private fun steamWebFirstResponseTimeoutMillis(
     connectAuthority: String,
     requestHead: String,
 ): Int =
@@ -562,7 +562,7 @@ internal class SteamLoopbackTlsBridge
         }
     }
 
-internal fun newBridgeConnectionExecutor(): ThreadPoolExecutor =
+private fun newBridgeConnectionExecutor(): ThreadPoolExecutor =
     ThreadPoolExecutor(
         MAX_ACTIVE_BRIDGE_CONNECTIONS,
         MAX_ACTIVE_BRIDGE_CONNECTIONS,
@@ -619,7 +619,7 @@ internal data class ConnectRequest(
     val tlsServerName: String?,
 )
 
-internal fun parseSteamConnectRequest(headersText: String): ConnectRequest {
+private fun parseSteamConnectRequest(headersText: String): ConnectRequest {
     val lines = headersText.split("\r\n")
     val requestParts = lines.firstOrNull()?.split(' ') ?: throw IOException("Missing CONNECT request")
     if (requestParts.size != 3 || requestParts[0] != "CONNECT" || requestParts[2] != "HTTP/1.1") {

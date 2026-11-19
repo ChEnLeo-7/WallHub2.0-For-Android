@@ -150,7 +150,7 @@ internal fun encodeSteamCredential(credential: PersistedSteamCredential): String
         credential.avatarUrl.encodeNullableRecordField(),
     ).joinToString(STEAM_CREDENTIAL_RECORD_SEPARATOR)
 
-internal fun decodeSteamCredential(payload: String): PersistedSteamCredential {
+private fun decodeSteamCredential(payload: String): PersistedSteamCredential {
     val fields = payload.split(STEAM_CREDENTIAL_RECORD_SEPARATOR)
     return when (fields.firstOrNull()) {
         STEAM_CREDENTIAL_LEGACY_RECORD_VERSION -> {

@@ -258,7 +258,7 @@ internal fun WallHubAdaptiveNavigationLayout(
  * The pill carries no border; the official elevation shadow separates it from the page.
  */
 @Composable
-internal fun WallHubFloatingNavigationBar(
+private fun WallHubFloatingNavigationBar(
     destinations: List<TopLevelDestination>,
     currentTopLevelDestination: TopLevelDestination?,
     onNavigateTo: (TopLevelDestination) -> Unit,
@@ -407,7 +407,7 @@ private fun StandardBottomNavigation(
 }
 
 @Composable
-internal fun WallHubPadNavigationSidebar(
+private fun WallHubPadNavigationSidebar(
     destinations: List<TopLevelDestination>,
     currentDestination: TopLevelDestination?,
     expanded: Boolean,

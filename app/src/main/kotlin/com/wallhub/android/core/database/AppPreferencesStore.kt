@@ -495,4 +495,4 @@ class AppPreferencesStore internal constructor(
     }
 }
 
-internal fun preferencesFallbackFor(error: Throwable): Preferences = if (error is IOException) emptyPreferences() else throw error
+private fun preferencesFallbackFor(error: Throwable): Preferences = if (error is IOException) emptyPreferences() else throw error

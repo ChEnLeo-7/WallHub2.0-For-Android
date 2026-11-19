@@ -11,7 +11,7 @@ internal fun OkHttpClient.Builder.applyDownloadProxy(proxyUrl: String): OkHttpCl
         proxyUrl.takeIf(String::isNotBlank)?.let { proxy(parseDownloadProxy(it)) }
     }
 
-internal fun parseDownloadProxy(raw: String): Proxy {
+private fun parseDownloadProxy(raw: String): Proxy {
     require(isSupportedDownloadProxyUrl(raw)) { "Invalid download proxy URL" }
     val uri =
         runCatching { URI(raw.trim()) }.getOrElse {

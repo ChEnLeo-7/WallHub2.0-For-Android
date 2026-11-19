@@ -40,7 +40,7 @@ internal fun AccountWorkshopSort.sdkPersonalSort(): Int =
         AccountWorkshopSort.CREATED_DESC -> WorkshopPersonalSort.CREATED_DESC
     }
 
-internal fun accountCollectionPriority(
+private fun accountCollectionPriority(
     query: AccountWorkshopQuery,
     sourcePageSize: Int,
 ): WorkshopReadPriority =

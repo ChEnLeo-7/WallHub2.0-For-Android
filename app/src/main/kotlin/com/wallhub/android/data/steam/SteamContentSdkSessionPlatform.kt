@@ -155,7 +155,7 @@ internal sealed interface SteamContentSdkSessionEvent {
 }
 
 /** Maps the SDK's state ordinal onto the app's named state. Total; an unknown ordinal is [SteamContentSdkSessionState.UNKNOWN]. */
-internal fun steamContentSdkSessionState(ordinal: Int): SteamContentSdkSessionState =
+private fun steamContentSdkSessionState(ordinal: Int): SteamContentSdkSessionState =
     when (ordinal) {
         SessionState.DISCONNECTED -> SteamContentSdkSessionState.DISCONNECTED
         SessionState.CONNECTING -> SteamContentSdkSessionState.CONNECTING
@@ -168,7 +168,7 @@ internal fun steamContentSdkSessionState(ordinal: Int): SteamContentSdkSessionSt
     }
 
 /** Maps the SDK's challenge ordinal onto the app's named kind. Total. */
-internal fun steamContentSdkChallengeKind(ordinal: Int): SteamContentSdkChallengeKind =
+private fun steamContentSdkChallengeKind(ordinal: Int): SteamContentSdkChallengeKind =
     when (ordinal) {
         ChallengeKind.NONE -> SteamContentSdkChallengeKind.NONE
         ChallengeKind.EMAIL -> SteamContentSdkChallengeKind.EMAIL
@@ -179,7 +179,7 @@ internal fun steamContentSdkChallengeKind(ordinal: Int): SteamContentSdkChalleng
     }
 
 /** Maps the SDK's failure ordinal onto the app's named failure. Total. */
-internal fun steamContentSdkSessionFailure(ordinal: Long): SteamContentSdkSessionFailure =
+private fun steamContentSdkSessionFailure(ordinal: Long): SteamContentSdkSessionFailure =
     when (ordinal) {
         SessionFailure.NONE -> SteamContentSdkSessionFailure.NONE
         SessionFailure.INVALID_INPUT -> SteamContentSdkSessionFailure.INVALID_INPUT
@@ -195,7 +195,7 @@ internal fun steamContentSdkSessionFailure(ordinal: Long): SteamContentSdkSessio
     }
 
 /** Maps the SDK's maintenance-step ordinal onto the app's named step. Total. */
-internal fun steamContentSdkMaintenanceStep(ordinal: Int): SteamContentSdkMaintenanceStep =
+private fun steamContentSdkMaintenanceStep(ordinal: Int): SteamContentSdkMaintenanceStep =
     when (ordinal) {
         SessionMaintenanceStep.IDLE -> SteamContentSdkMaintenanceStep.IDLE
         SessionMaintenanceStep.HEARTBEAT_SENT -> SteamContentSdkMaintenanceStep.HEARTBEAT_SENT
@@ -206,7 +206,7 @@ internal fun steamContentSdkMaintenanceStep(ordinal: Int): SteamContentSdkMainte
     }
 
 /** Maps the SDK's drain outcome onto the app's named outcome. Total. */
-internal fun steamContentSdkPumpOutcome(ordinal: Int): SteamContentSdkPumpOutcome =
+private fun steamContentSdkPumpOutcome(ordinal: Int): SteamContentSdkPumpOutcome =
     when (ordinal) {
         SessionPumpOutcome.IDLE -> SteamContentSdkPumpOutcome.IDLE
         SessionPumpOutcome.READ -> SteamContentSdkPumpOutcome.READ
@@ -219,7 +219,7 @@ internal fun steamContentSdkPumpOutcome(ordinal: Int): SteamContentSdkPumpOutcom
  * Every payload ordinal is read here, so the session backend and everything above it deal only in the
  * named values above; an event kind or payload this build does not know becomes [SteamContentSdkSessionEvent.Unknown].
  */
-internal fun steamContentSdkSessionEvent(
+private fun steamContentSdkSessionEvent(
     kind: Int,
     value: Long,
 ): SteamContentSdkSessionEvent =

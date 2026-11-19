@@ -352,7 +352,7 @@ internal fun DetailCommentsPage(
 }
 
 @Composable
-internal fun CommentComposer(
+private fun CommentComposer(
     value: String,
     isPosting: Boolean,
     error: DetailUiText?,
@@ -469,7 +469,7 @@ internal fun CommentComposer(
 }
 
 @Composable
-internal fun WorkshopCommentItem(
+private fun WorkshopCommentItem(
     comment: WorkshopComment,
     index: Int,
     itemCount: Int,

@@ -80,7 +80,7 @@ internal const val WALLHUB_REPOSITORY_LABEL = "ChEnLeo-7/WallHub2.0-For-Android"
 internal const val WALLHUB_REPOSITORY_URL =
     "https://github.com/ChEnLeo-7/WallHub2.0-For-Android"
 
-internal val WALLHUB_AUTHOR =
+private val WALLHUB_AUTHOR =
     WallHubPerson(
         displayName = "CHENLEO_7",
         githubAccount = "ChEnLeo-7",
@@ -88,7 +88,7 @@ internal val WALLHUB_AUTHOR =
         roleRes = R.string.settings_about_role_author,
     )
 
-internal val WALLHUB_DEVELOPERS =
+private val WALLHUB_DEVELOPERS =
     listOf(
         WALLHUB_AUTHOR,
         WallHubPerson(
@@ -99,7 +99,7 @@ internal val WALLHUB_DEVELOPERS =
         ),
     )
 
-internal val WALLHUB_CONTRIBUTORS =
+private val WALLHUB_CONTRIBUTORS =
     listOf(
         WallHubPerson(
             displayName = "cccp114",
@@ -153,7 +153,7 @@ internal fun AboutWallHubScreen(
 }
 
 @Composable
-internal fun AboutWallHubPreferences(
+private fun AboutWallHubPreferences(
     installed: InstalledAppInfo,
     appUpdateState: AppUpdateUiState,
     onCheckForAppUpdate: () -> Unit,
@@ -479,7 +479,7 @@ private enum class AboutUpdateAction {
     INSTALL,
 }
 
-internal fun formatAppUpdateDate(
+private fun formatAppUpdateDate(
     epochMillis: Long,
     zoneId: ZoneId = ZoneId.systemDefault(),
 ): String =

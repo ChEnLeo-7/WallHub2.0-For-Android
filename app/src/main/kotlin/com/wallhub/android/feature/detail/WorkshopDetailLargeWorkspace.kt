@@ -63,8 +63,8 @@ import com.wallhub.android.core.model.WorkshopComment
 import com.wallhub.android.core.model.WorkshopDetail
 import com.wallhub.android.core.model.WorkshopInteraction
 
-internal val LARGE_DETAIL_WORKSPACE_MIN_WIDTH = 1280.dp
-internal val LARGE_DETAIL_WORKSPACE_MIN_HEIGHT = 720.dp
+private val LARGE_DETAIL_WORKSPACE_MIN_WIDTH = 1280.dp
+private val LARGE_DETAIL_WORKSPACE_MIN_HEIGHT = 720.dp
 private val LARGE_DETAIL_WORKSPACE_MAX_WIDTH = 1480.dp
 private val LARGE_DETAIL_MEDIA_MAX_HEIGHT = 460.dp
 private val LARGE_DETAIL_COMMENTS_WIDTH = 460.dp

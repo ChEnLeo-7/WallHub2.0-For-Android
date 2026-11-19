@@ -90,7 +90,7 @@ data class WorkshopBrowseQuery(
     val language: Int = defaultSteamWorkshopLanguage(),
 )
 
-internal fun defaultSteamWorkshopLanguage(): Int =
+private fun defaultSteamWorkshopLanguage(): Int =
     if (Locale.getDefault().language == Locale.CHINESE.language) 6 else 0
 
 data class AccountWorkshopQuery(

@@ -928,7 +928,7 @@ internal fun classifyConversionFailure(error: Throwable): ConversionFailure {
     return ConversionFailure(reasonCode, diagnostic.detail, diagnostic.type)
 }
 
-internal fun conversionFailureMessage(
+private fun conversionFailureMessage(
     context: Context,
     reasonCode: String,
 ): String =
@@ -942,7 +942,7 @@ internal fun conversionFailureMessage(
         else -> context.getString(R.string.backend_conversion_failure_generic)
     }
 
-internal fun completionNotificationText(
+private fun completionNotificationText(
     context: Context,
     warningCount: Int,
 ): String =
@@ -956,15 +956,15 @@ internal fun completionNotificationText(
         context.getString(R.string.backend_conversion_notification_complete)
     }
 
-internal fun completionNotificationId(taskId: String): Int = 0x57000000 xor taskId.hashCode()
+private fun completionNotificationId(taskId: String): Int = 0x57000000 xor taskId.hashCode()
 
-internal fun previousPublicOutputForReplacement(
+private fun previousPublicOutputForReplacement(
     outputTreeUri: String?,
     outputUri: String?,
     hasPublishedOutput: Boolean,
 ): String? = outputUri?.takeIf { outputTreeUri.isNullOrBlank() && hasPublishedOutput }
 
-internal fun settledConversionStatus(
+private fun settledConversionStatus(
     hasPublishedOutput: Boolean,
     firstAttemptTerminalStatus: DownloadStatus,
 ): DownloadStatus = if (hasPublishedOutput) DownloadStatus.COMPLETED else firstAttemptTerminalStatus
@@ -1404,7 +1404,7 @@ internal fun requireDirectExportSpace(
     }
 }
 
-internal fun checkedConversionDiskEstimate(lengths: Sequence<Long>): Long {
+private fun checkedConversionDiskEstimate(lengths: Sequence<Long>): Long {
     val total =
         lengths.fold(0L) { accumulated, length ->
             require(length >= 0L) { "Negative workshop content length" }

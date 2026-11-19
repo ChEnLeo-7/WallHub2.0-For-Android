@@ -246,13 +246,13 @@ private fun PaginationIconButton(
     }
 }
 
-internal fun sanitizePaginationPageInput(raw: String): String {
+private fun sanitizePaginationPageInput(raw: String): String {
     val digits = raw.filter { it in '0'..'9' }
     if (digits.isEmpty()) return ""
     return digits.trimStart('0').ifEmpty { "0" }
 }
 
-internal fun resolvePaginationPageInput(input: String): Int? = input.toIntOrNull()?.takeIf { it > 0 }
+private fun resolvePaginationPageInput(input: String): Int? = input.toIntOrNull()?.takeIf { it > 0 }
 
 internal fun buildPaginationItems(
     currentPage: Int,

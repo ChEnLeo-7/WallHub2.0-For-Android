@@ -398,7 +398,7 @@ private val HOME_FLOATING_FILTER_SLOT_WIDTH = 56.dp + WallHubSpacing.xs
 private const val HOME_FLOATING_FILTER_FADE_DURATION_MS = 140
 
 @Composable
-internal fun HomeScreenFrame(
+private fun HomeScreenFrame(
     state: HomeUiState,
     onAction: (HomeAction) -> Unit,
     onOpenSettings: (() -> Unit)?,
@@ -461,7 +461,7 @@ internal fun HomeScreenFrame(
 }
 
 @Composable
-internal fun HomeScreenBody(
+private fun HomeScreenBody(
     state: HomeUiState,
     onAction: (HomeAction) -> Unit,
     onOpenSettings: (() -> Unit)?,
@@ -998,7 +998,7 @@ internal fun HomeFlatCard(
 }
 
 @Composable
-internal fun HomeViewModeToggle(
+private fun HomeViewModeToggle(
     selected: HomeViewMode,
     onViewModeSelected: (HomeViewMode) -> Unit,
     gridContentDescription: String,
@@ -1325,7 +1325,7 @@ internal fun HomeResults(
 }
 
 @Composable
-internal fun HomePagination(
+private fun HomePagination(
     currentPage: Int,
     totalPages: Int,
     isLoading: Boolean,

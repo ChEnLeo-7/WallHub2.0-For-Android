@@ -216,7 +216,7 @@ internal fun AppearanceSettingsScreen(
 }
 
 @Composable
-internal fun AppearanceSettingsContent(
+private fun AppearanceSettingsContent(
     preferences: AppPreferences,
     availableAccents: List<AccentPreference>,
     customAccentColor: String,
@@ -580,11 +580,11 @@ internal fun SteamStreamCacheSetting(
     }
 }
 
-internal fun formatSteamStreamCacheLimit(limitMb: Int): String =
+private fun formatSteamStreamCacheLimit(limitMb: Int): String =
     if (limitMb >= 1024 && limitMb % 1024 == 0) "${limitMb / 1024} GB" else "$limitMb MB"
 
 @Composable
-internal fun SettingsSheetContent(content: @Composable ColumnScope.() -> Unit) {
+private fun SettingsSheetContent(content: @Composable ColumnScope.() -> Unit) {
     Column(
         modifier =
             Modifier
@@ -679,7 +679,7 @@ internal fun AccentColorDot(color: Color) {
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-internal fun MonetColorPicker(
+private fun MonetColorPicker(
     colorHex: String,
     onColorChanged: (String) -> Unit,
 ) {
@@ -792,7 +792,7 @@ internal fun MonetColorPicker(
 }
 
 @Composable
-internal fun MonetColorSlider(
+private fun MonetColorSlider(
     label: String,
     value: Float,
     valueRange: ClosedFloatingPointRange<Float>,
@@ -850,7 +850,7 @@ internal fun String.toMonetHsv(): MonetHsv {
     )
 }
 
-internal fun circularHueDistance(
+private fun circularHueDistance(
     first: Float,
     second: Float,
 ): Float {
@@ -916,12 +916,9 @@ internal const val SETTINGS_PAGE_EXIT_DURATION_MS = 230
 internal const val SETTINGS_PAGE_ENTER_OFFSET_DIVISOR = 9
 internal const val SETTINGS_PAGE_EXIT_OFFSET_DIVISOR = 18
 internal val SETTINGS_CONTENT_MAX_WIDTH = 760.dp
-internal val SETTINGS_SHEET_CONTENT_MAX_HEIGHT = 560.dp
-internal val SETTINGS_DROPDOWN_WIDTH = 200.dp
-internal val STEAM_DOH_ITEM_HEIGHT = 84.dp
-internal val STEAM_DOH_ITEM_SPACING = WallHubSpacing.xs
+private val SETTINGS_SHEET_CONTENT_MAX_HEIGHT = 560.dp
 internal val SETTINGS_PAGE_EASING = CubicBezierEasing(0.2f, 0f, 0f, 1f)
-internal val MONET_HUE_PRESETS =
+private val MONET_HUE_PRESETS =
     listOf(
         0f,
         24f,

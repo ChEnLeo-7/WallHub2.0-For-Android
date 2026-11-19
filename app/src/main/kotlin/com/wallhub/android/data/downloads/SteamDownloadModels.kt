@@ -65,7 +65,7 @@ internal data class SteamContentDownloadOptions(
         )
 }
 
-internal fun safeChunkConcurrency(
+private fun safeChunkConcurrency(
     configuredConcurrency: Int,
     @Suppress("UNUSED_PARAMETER") maxHeapBytes: Long,
 ): Int = safeChunkDownloadConcurrency(configuredConcurrency)

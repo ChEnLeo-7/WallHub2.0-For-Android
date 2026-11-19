@@ -38,7 +38,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 internal const val STEAM_SESSION_MAINTENANCE_INTERVAL_MS = 2_000L
 
 /** SteamHelper-style bounded reconnect debt: 1, 2, 4, 8, 16, 32, then 60 seconds. */
-internal fun steamAccountRecoveryDelayMs(shortSessionFailures: Long): Long {
+private fun steamAccountRecoveryDelayMs(shortSessionFailures: Long): Long {
     if (shortSessionFailures <= 0L) return 0L
     val exponent = (shortSessionFailures - 1L).coerceAtMost(MAX_RECOVERY_BACKOFF_EXPONENT).toInt()
     return (FIRST_RECOVERY_BACKOFF_MS shl exponent).coerceAtMost(MAX_RECOVERY_BACKOFF_MS)

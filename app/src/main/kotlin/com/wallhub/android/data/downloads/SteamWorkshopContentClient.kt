@@ -305,12 +305,12 @@ internal fun directVideoFileName(
     return "$sanitizedStem.$extension"
 }
 
-internal fun directPreviewFileName(previewUrl: String): String {
+private fun directPreviewFileName(previewUrl: String): String {
     val extension = previewUrl.substringBefore('?').substringBefore('#').videoFileExtension()
     return "preview.${extension.takeIf { it in setOf("gif", "jpg", "jpeg", "png", "webp") } ?: "jpg"}"
 }
 
-internal fun validatedPreviewExtension(file: File): String? {
+private fun validatedPreviewExtension(file: File): String? {
     if (!file.isFile || file.length() !in 1..MAX_DIRECT_PREVIEW_BYTES) return null
     val header = ByteArray(12)
     val length = file.inputStream().use { it.read(header) }
@@ -464,7 +464,7 @@ internal data class DirectContentRange(
     val total: Long,
 )
 
-internal fun parseDirectContentRange(value: String?): DirectContentRange? {
+private fun parseDirectContentRange(value: String?): DirectContentRange? {
     val match = DIRECT_CONTENT_RANGE.matchEntire(value?.trim().orEmpty()) ?: return null
     val start = match.groupValues[1].toLongOrNull() ?: return null
     val end = match.groupValues[2].toLongOrNull() ?: return null

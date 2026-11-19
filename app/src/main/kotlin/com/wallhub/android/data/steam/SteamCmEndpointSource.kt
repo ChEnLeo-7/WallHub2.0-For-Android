@@ -150,13 +150,13 @@ internal suspend fun Call.awaitResponse(): Result<Response> =
 
 internal fun cmCandidateCount(candidates: String): Int = candidates.lineSequence().count { it.isNotBlank() }
 
-internal fun selectCmCandidates(
+private fun selectCmCandidates(
     live: String,
     cached: String,
     refreshLive: Boolean,
 ): String? = live.takeIf(String::isNotEmpty) ?: cached.takeIf { !refreshLive && it.isNotEmpty() }
 
-internal fun readBoundedCmDirectoryBody(body: ResponseBody): String? {
+private fun readBoundedCmDirectoryBody(body: ResponseBody): String? {
     val declaredLength = body.contentLength()
     if (declaredLength > MAX_CM_LIST_CACHE_BYTES) return null
     val output = java.io.ByteArrayOutputStream()

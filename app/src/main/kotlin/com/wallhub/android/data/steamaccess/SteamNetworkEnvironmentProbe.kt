@@ -175,7 +175,7 @@ internal class SteamProxyAuthChallenge {
 }
 
 /** OkHttp's own tunnel refusal: a 407 it could not answer with a credential. */
-internal fun isProxyAuthenticationFailure(error: Throwable): Boolean =
+private fun isProxyAuthenticationFailure(error: Throwable): Boolean =
     error is IOException && error.message?.contains(PROXY_AUTH_FAILURE_MARKER) == true
 
 /**

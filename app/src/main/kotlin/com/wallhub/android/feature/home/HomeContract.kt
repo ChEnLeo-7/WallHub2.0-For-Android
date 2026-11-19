@@ -46,7 +46,7 @@ internal data class HomeCardLayoutKey(
     }
 }
 
-internal fun defaultHomeCardsPerRow(windowLayout: WallHubWindowLayout): Int =
+private fun defaultHomeCardsPerRow(windowLayout: WallHubWindowLayout): Int =
     if (windowLayout == WallHubWindowLayout.EXPANDED) 4 else 2
 
 internal fun displayedHomeCardsPerRow(

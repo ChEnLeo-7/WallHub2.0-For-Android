@@ -410,7 +410,7 @@ fun SettingsScreen(
 }
 
 @Composable
-internal fun SettingsCategoryContent(
+private fun SettingsCategoryContent(
     category: SettingsCategory,
     preferences: AppPreferences,
     appLanguage: AppLanguage,

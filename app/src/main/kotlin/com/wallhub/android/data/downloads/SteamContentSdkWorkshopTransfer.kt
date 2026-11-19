@@ -703,7 +703,7 @@ internal enum class DownloadRecoveryDecision {
 }
 
 /** A bounded, typed decision; the caller always performs at most two SDK task attempts. */
-internal fun downloadRecoveryDecision(failure: SteamContentSdkTaskFailureException): DownloadRecoveryDecision =
+private fun downloadRecoveryDecision(failure: SteamContentSdkTaskFailureException): DownloadRecoveryDecision =
     when {
         failure.ordinal == TaskFailure.SESSION_GENERATION_LOST ||
             failure.ordinal == SDK_TASK_FAILURE_CONTENT_DIRECTORY_UNAVAILABLE ->
@@ -736,7 +736,7 @@ internal class SteamContentSdkTaskFailureException(
 }
 
 /** Maps an SDK task state onto the phase vocabulary the app's progress contract already publishes. */
-internal fun sdkProgressPhase(
+private fun sdkProgressPhase(
     status: SteamContentSdkTaskStatus,
     manifestResolved: Boolean,
 ): SteamDownloadPhase =
@@ -753,7 +753,7 @@ internal fun sdkProgressPhase(
     }
 
 /** Names a stable SDK failure ordinal without carrying any SDK-owned material into a message. */
-internal fun sdkFailureName(ordinal: Long): String? =
+private fun sdkFailureName(ordinal: Long): String? =
     when (ordinal) {
         TaskFailure.NONE -> null
         TaskFailure.CANCELLED -> "cancelled"
@@ -782,7 +782,7 @@ internal fun sdkFailureName(ordinal: Long): String? =
  * while it fetches. An unknown kind stays an ordinal because the SDK appends kinds and this app must not
  * rename a number it does not know.
  */
-internal fun sdkTaskEventName(kind: Int): String =
+private fun sdkTaskEventName(kind: Int): String =
     when (kind) {
         TaskEventKind.PHASE_CHANGED -> "PHASE_CHANGED"
         TaskEventKind.MANIFEST_RESOLVED -> "MANIFEST_RESOLVED"
@@ -810,7 +810,7 @@ internal fun sdkTaskEventName(kind: Int): String =
         else -> "kind $kind"
     }
 
-internal fun sdkPreparationTimingName(kind: Int): String? =
+private fun sdkPreparationTimingName(kind: Int): String? =
     when (kind) {
         TaskEventKind.PREPARATION_RESOLUTION_STARTED -> "sdk_resolution_started"
         TaskEventKind.PREPARATION_MANIFEST_REQUEST_CODE_READY -> "sdk_manifest_request_code_ready"
@@ -835,7 +835,7 @@ internal fun sdkPreparationTimingName(kind: Int): String? =
  * very directory it already hands to the old transfer (`<filesDir>/wallhub-workshop/<taskId>`) relative
  * to that root. A directory that is not inside the root is a clear failure rather than an invented path.
  */
-internal fun sdkRelativeDestination(
+private fun sdkRelativeDestination(
     destinationDirectory: File,
     storageRoot: File,
 ): String {

@@ -120,7 +120,7 @@ fun WorkshopDetailRoute(
 }
 
 @Composable
-fun WorkshopDetailEffectHandler(
+private fun WorkshopDetailEffectHandler(
     viewModel: WorkshopDetailViewModel,
     onBack: () -> Unit,
     onSearchAuthor: (String) -> Unit = {},

@@ -402,7 +402,7 @@ private fun DetailMetricCell(
 }
 
 @Composable
-internal fun DetailMetricRow(
+private fun DetailMetricRow(
     first: DetailMetricValue,
     second: DetailMetricValue? = null,
 ) {
@@ -416,7 +416,7 @@ internal fun DetailMetricRow(
 }
 
 @Composable
-internal fun DetailMetric(
+private fun DetailMetric(
     metric: DetailMetricValue,
     modifier: Modifier = Modifier,
 ) {

@@ -65,7 +65,7 @@ private val MPKG_CONVERSION_OPTIONS =
         ),
     )
 
-internal fun mpkgConversionOptions(): List<MpkgConversionOption> = MPKG_CONVERSION_OPTIONS
+private fun mpkgConversionOptions(): List<MpkgConversionOption> = MPKG_CONVERSION_OPTIONS
 
 @Composable
 internal fun MpkgConversionOptions(

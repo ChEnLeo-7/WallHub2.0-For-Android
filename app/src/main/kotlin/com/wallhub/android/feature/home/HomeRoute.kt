@@ -114,7 +114,7 @@ fun HomeRoute(
 }
 
 @Composable
-fun HomeEffectHandler(
+private fun HomeEffectHandler(
     viewModel: HomeViewModel,
     onOpenDetail: (Long) -> Unit,
     onSearchAuthor: (String) -> Unit = {},

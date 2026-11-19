@@ -84,7 +84,7 @@ internal data class SteamDohProbeResult(
     val available: Boolean get() = addresses.isNotEmpty() && latencyMs != null
 }
 
-internal fun foregroundResolutionComplete(
+private fun foregroundResolutionComplete(
     hostnames: List<String>,
     answers: Map<String, List<InetAddress>>,
 ): Boolean =

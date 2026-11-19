@@ -325,16 +325,16 @@ internal fun SteamSessionRestoreBanner(
 
 // Saved identity without a live transport (RESTORABLE), and recovery in progress, are not failures.
 // Keep attention states explicit so normal foreground recovery cannot become a global alarm.
-internal fun shouldShowSteamSessionRestoreBanner(session: SteamSessionState): Boolean =
+private fun shouldShowSteamSessionRestoreBanner(session: SteamSessionState): Boolean =
     shouldOpenSteamSignInFromRestoreBanner(session) ||
         (session.hasStoredSession && session.phase == SteamSessionPhase.FAILED)
 
-internal fun shouldOpenSteamSignInFromRestoreBanner(session: SteamSessionState): Boolean =
+private fun shouldOpenSteamSignInFromRestoreBanner(session: SteamSessionState): Boolean =
     session.phase == SteamSessionPhase.EXPIRED ||
         session.phase == SteamSessionPhase.WAITING_FOR_CODE ||
         session.phase == SteamSessionPhase.WAITING_FOR_DEVICE_CONFIRMATION
 
-internal fun shouldReportExpiredPersistedSession(
+private fun shouldReportExpiredPersistedSession(
     session: SteamSessionState,
     alreadyReported: Boolean,
 ): Boolean =

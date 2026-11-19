@@ -27,7 +27,7 @@ internal fun AppLanguage.toLocaleList(): LocaleListCompat =
         AppLanguage.ENGLISH -> LocaleListCompat.forLanguageTags("en")
     }
 
-internal fun LocaleListCompat.toAppLanguage(): AppLanguage =
+private fun LocaleListCompat.toAppLanguage(): AppLanguage =
     when (get(0)?.language) {
         "zh" -> AppLanguage.SIMPLIFIED_CHINESE
         "en" -> AppLanguage.ENGLISH

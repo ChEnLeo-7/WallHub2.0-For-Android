@@ -258,9 +258,7 @@ internal const val COMMUNITY_COMMENTS_API_URL =
     "https://api.steampowered.com/ICommunityService/GetCommentThread/v1/"
 internal const val COMMUNITY_COMMENTS_HTML_URL =
     "https://steamcommunity.com/comment/PublishedFile_Public/render"
-internal val WORKSHOP_TYPE_TAGS = STEAM_WORKSHOP_TYPE_TAGS
-internal val CONTENT_RATING_TAGS = STEAM_CONTENT_RATING_TAGS
-internal val COMMUNITY_GENRE_TAGS =
+private val COMMUNITY_GENRE_TAGS =
     setOf(
         "Abstract",
         "Animal",
@@ -288,7 +286,7 @@ internal val COMMUNITY_GENRE_TAGS =
         "Vehicle",
         "Unspecified",
     )
-internal val OFFICIAL_TAGS =
+private val OFFICIAL_TAGS =
     setOf(
         "Approved",
         "Audio responsive",
@@ -301,4 +299,4 @@ internal val OFFICIAL_TAGS =
         "Video Texture",
         "Asset Pack",
     )
-internal val RESOLUTION_TAGS = WORKSHOP_RESOLUTION_TAG_MAP.keys
+private val RESOLUTION_TAGS = WORKSHOP_RESOLUTION_TAG_MAP.keys

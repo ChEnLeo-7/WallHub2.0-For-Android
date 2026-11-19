@@ -306,7 +306,7 @@ internal fun brandColorMatchScheme(dark: Boolean): ColorScheme {
     }
 }
 
-internal fun shouldUseSystemMonet(
+private fun shouldUseSystemMonet(
     useSystemMonet: Boolean,
     sdkInt: Int,
 ): Boolean = useSystemMonet && sdkInt >= Build.VERSION_CODES.S

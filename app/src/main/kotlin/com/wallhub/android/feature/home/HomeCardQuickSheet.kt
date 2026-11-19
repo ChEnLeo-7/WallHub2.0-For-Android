@@ -81,7 +81,7 @@ internal fun HomeCardQuickSheet(
 }
 
 @Composable
-internal fun HomeCardQuickSheetContent(
+private fun HomeCardQuickSheetContent(
     item: WorkshopSummary,
     content: HomeCardHostContent,
     onDismiss: () -> Unit,

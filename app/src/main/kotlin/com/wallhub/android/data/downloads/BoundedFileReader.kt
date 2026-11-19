@@ -24,7 +24,7 @@ internal fun java.io.InputStream.readBytesBounded(maxBytes: Int): ByteArray {
     return output.toByteArray()
 }
 
-fun readBoundedUtf8File(
+private fun readBoundedUtf8File(
     file: File,
     maxBytes: Long,
     label: String = file.name,

@@ -447,7 +447,7 @@ class DiscoverFeedCoordinator
         )
     }
 
-internal fun selectDiscoverCandidates(
+private fun selectDiscoverCandidates(
     spec: DiscoverRailSpec,
     candidates: List<com.wallhub.android.core.model.WorkshopSummary>,
     excludedIds: Set<Long>,
@@ -474,7 +474,7 @@ internal fun DiscoverCategory.isFocusShowcase(): Boolean =
     this == DiscoverCategory.CREATOR_SHOWCASE || this == DiscoverCategory.COLLECTION_SHOWCASE
 
 /** Moves only first-screen showcases past five ordinary rails without disturbing the remaining ranking. */
-internal fun deferInitialShowcases(specs: List<DiscoverRailSpec>): List<DiscoverRailSpec> {
+private fun deferInitialShowcases(specs: List<DiscoverRailSpec>): List<DiscoverRailSpec> {
     val result = specs.toMutableList()
     val deferred = mutableListOf<DiscoverRailSpec>()
     var index = 0
@@ -493,7 +493,7 @@ internal fun initialDiscoverRailCount(specs: List<DiscoverRailSpec>): Int =
     DISCOVER_INITIAL_RAIL_COUNT.coerceAtMost(specs.size)
 
 /** One focus rail resolves a bounded oversample, then publishes at most one horizontal page. */
-internal fun sampleFeaturedChildren(
+private fun sampleFeaturedChildren(
     children: List<DiscoverRailSpec>,
     generation: Long,
     railId: String,
@@ -502,7 +502,7 @@ internal fun sampleFeaturedChildren(
         .shuffled(Random(generation xor railId.hashCode().toLong()))
         .take(DISCOVER_FEATURED_RESOLUTION_COUNT)
 
-internal fun rankSpecs(
+private fun rankSpecs(
     specs: List<DiscoverRailSpec>,
     feedbackAdjustments: Map<String, Float>,
     generation: Long,
@@ -548,7 +548,7 @@ private suspend fun <T> discoverOptional(block: suspend () -> T): T? =
         null
     }
 
-internal fun isTransientDiscoverFailure(error: Throwable): Boolean {
+private fun isTransientDiscoverFailure(error: Throwable): Boolean {
     if (error is CancellationException) return false
     val message = error.message?.lowercase(Locale.ROOT).orEmpty()
     if (error is IllegalArgumentException || error is UnsupportedOperationException ||

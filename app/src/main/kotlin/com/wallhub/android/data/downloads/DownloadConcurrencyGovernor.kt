@@ -190,7 +190,7 @@ class DownloadConcurrencyGovernor private constructor(
 
 internal class DownloadAdmissionWithdrawnException : RuntimeException()
 
-internal fun safeDownloadLimit(
+private fun safeDownloadLimit(
     configuredLimit: Int,
     @Suppress("UNUSED_PARAMETER")
     maxHeapBytes: Long,

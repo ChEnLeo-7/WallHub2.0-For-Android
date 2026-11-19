@@ -18,7 +18,7 @@ import kotlinx.coroutines.withContext
 internal class InsufficientDestinationSpaceException(message: String) : IllegalArgumentException(message)
 
 /** The space a download of [pendingBytes] needs, including the safety reserve, or a failure if it cannot fit. */
-internal fun requiredDownloadSpace(
+private fun requiredDownloadSpace(
     pendingBytes: Long,
     usableSpace: Long,
 ): Long {
