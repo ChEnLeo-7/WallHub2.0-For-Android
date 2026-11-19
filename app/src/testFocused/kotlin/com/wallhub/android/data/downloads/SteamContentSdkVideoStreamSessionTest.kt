@@ -20,6 +20,9 @@ import java.util.concurrent.CancellationException
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
@@ -144,6 +147,8 @@ private class FakeRangeSession : SteamContentSdkSession {
     }
 }
 
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35])
 class SteamContentSdkVideoStreamSessionTest {
     @Test
     fun `SDK per-stream memory cache remains fixed regardless of persistent disk budget`() {

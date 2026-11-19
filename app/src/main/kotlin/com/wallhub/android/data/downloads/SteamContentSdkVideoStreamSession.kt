@@ -215,9 +215,13 @@ internal interface StreamTelemetryLog {
 }
 
 internal object AndroidStreamTelemetryLog : StreamTelemetryLog {
-    override fun isDebugEnabled(): Boolean = Log.isLoggable(TELEMETRY_TAG, Log.DEBUG)
+    // android.util.Log.isLoggable is a native method, so the JVM unit-test stub throws
+    // UnsatisfiedLinkError instead of returning a level. Treat an unreadable level as "off".
+    override fun isDebugEnabled(): Boolean =
+        runCatching { Log.isLoggable(TELEMETRY_TAG, Log.DEBUG) }.getOrDefault(false)
 
-    override fun isWarnEnabled(): Boolean = Log.isLoggable(TELEMETRY_TAG, Log.WARN)
+    override fun isWarnEnabled(): Boolean =
+        runCatching { Log.isLoggable(TELEMETRY_TAG, Log.WARN) }.getOrDefault(false)
 
     override fun debug(message: String) {
         Log.d(TELEMETRY_TAG, message)
