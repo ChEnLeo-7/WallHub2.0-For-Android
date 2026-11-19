@@ -12,7 +12,7 @@ actual_commit="$(git -C "$repo_dir" rev-parse HEAD)"
 
 (
   cd "$repo_dir"
-  SC_ANDROID_AAR_VERSION=0.1.157 SC_AAR_GRADLE_OFFLINE="${SC_AAR_GRADLE_OFFLINE:-0}" \
+  SC_ANDROID_AAR_VERSION=0.1.162 SC_AAR_GRADLE_OFFLINE="${SC_AAR_GRADLE_OFFLINE:-0}" \
     ./scripts/check-android-aar.sh
 )
 
