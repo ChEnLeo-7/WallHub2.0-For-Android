@@ -62,11 +62,9 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: 8.12.1
+      - uses: android-actions/setup-android@v4
       - name: Install Android SDK packages
-        run: |
-          sdkmanager --version
-          yes | sdkmanager --licenses > /dev/null || true
-          yes | sdkmanager "platforms;android-36" "build-tools;${BUILD_TOOLS_VERSION}" "ndk;27.0.12077973"
+        run: yes | sdkmanager "platforms;android-36" "build-tools;${BUILD_TOOLS_VERSION}" "ndk;27.0.12077973"
       - name: Stage locked native dependencies
         env:
           ANDROID_NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/27.0.12077973
