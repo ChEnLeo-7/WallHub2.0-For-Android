@@ -1,0 +1,318 @@
+package com.wallhub.android.core.model
+
+import java.net.URI
+
+enum class AppLanguage {
+    SYSTEM,
+    SIMPLIFIED_CHINESE,
+    ENGLISH,
+}
+
+enum class ThemePreference {
+    SYSTEM,
+    LIGHT,
+    DARK,
+}
+
+enum class AccentPreference {
+    DEFAULT,
+    MONET,
+    BLUE,
+    GREEN,
+    ROSE,
+    VIOLET,
+    CUSTOM,
+}
+
+enum class HomeCardAction {
+    DOWNLOAD,
+    PLAY_VIDEO,
+    OPEN_STEAM,
+}
+
+enum class HomePaginationMode {
+    INFINITE_SCROLL,
+    PAGED,
+}
+
+enum class SteamAccessMode {
+    SMART_DOH,
+    HOSTS,
+}
+
+enum class SteamWorkshopDataSource {
+    COMMUNITY_HTML,
+    WEB_API,
+    CM_WEBSOCKET,
+}
+
+enum class SteamAccessPhase {
+    DISABLED,
+    BYPASSED,
+    READY,
+    RESOLVING,
+    DEGRADED,
+    FAILED,
+}
+
+data class InstalledAppInfo(
+    val appName: String,
+    val packageName: String,
+    val versionName: String,
+    val versionCode: Long,
+    val lastUpdateTimeMillis: Long = 0L,
+)
+
+data class AppReleaseInfo(
+    val tagName: String,
+    val versionName: String,
+    val releaseName: String,
+    val notes: String,
+    val publishedAt: String,
+    val htmlUrl: String,
+    val assetName: String,
+    val assetUrl: String,
+    val assetSizeBytes: Long,
+    val sha256: String,
+    val isNewer: Boolean,
+)
+
+data class SteamDohEndpointStatus(
+    val endpoint: String,
+    val latencyMs: Long? = null,
+    val selected: Boolean = false,
+    val available: Boolean = false,
+)
+
+data class SteamAccessState(
+    val phase: SteamAccessPhase = SteamAccessPhase.DISABLED,
+    val networkType: String = "unknown",
+    val activeHost: String? = null,
+    val selectedAddress: String? = null,
+    val candidateCount: Int = 0,
+    val fallbackCount: Long = 0L,
+    val message: String? = null,
+    val dohEndpointStatuses: List<SteamDohEndpointStatus> = emptyList(),
+    val updatedAt: Long = System.currentTimeMillis(),
+)
+
+enum class SteamVerificationMethod {
+    EMAIL_CODE,
+    MOBILE_AUTHENTICATOR_CODE,
+    DEVICE_CONFIRMATION,
+}
+
+enum class SteamSessionPhase {
+    SIGNED_OUT,
+    RESTORABLE,
+    SIGNING_IN,
+    WAITING_FOR_DEVICE_CONFIRMATION,
+    WAITING_FOR_CODE,
+    SIGNED_IN,
+    EXPIRED,
+    FAILED,
+}
+
+data class SteamSessionState(
+    val phase: SteamSessionPhase = SteamSessionPhase.SIGNED_OUT,
+    val accountName: String? = null,
+    val personaName: String? = null,
+    val avatarUrl: String? = null,
+    val message: String? = null,
+    val requiresCode: Boolean = false,
+    val awaitingDeviceConfirmation: Boolean = false,
+    val verificationMethod: SteamVerificationMethod? = null,
+    val hasStoredSession: Boolean = false,
+    /** True only while the sole account CM generation is authenticated and published as usable. */
+    val isConnected: Boolean = false,
+    val updatedAt: Long = System.currentTimeMillis(),
+)
+
+data class SteamContentCredential(
+    val accountName: String,
+    val refreshToken: String,
+) {
+    /** Redacted like every other holder of this token: the generated `toString()` would print it. */
+    override fun toString(): String =
+        "SteamContentCredential(accountName=$accountName, refreshToken=<redacted>)"
+}
+
+const val DEFAULT_HOME_PAGE_SIZE = 30
+const val MIN_STREAM_CACHE_MB = 128
+const val DEFAULT_STREAM_CACHE_MB = 512
+const val MAX_STREAM_CACHE_MB = 8192
+const val MAX_MANUAL_HOME_COLUMNS = 8
+val HOME_PAGE_SIZE_OPTIONS = listOf(10, 15, 30, 50)
+
+fun Int.normalizedStreamCacheLimitMb(): Int = coerceIn(MIN_STREAM_CACHE_MB, MAX_STREAM_CACHE_MB)
+
+fun Int.normalizedHomePageSize(): Int =
+    HOME_PAGE_SIZE_OPTIONS.minBy { option -> kotlin.math.abs(toLong() - option.toLong()) }
+
+data class AppPreferences(
+    val setupWizardCompleted: Boolean = false,
+    val theme: ThemePreference = ThemePreference.SYSTEM,
+    val visualStyle: VisualStyle = VisualStyle.MATERIAL3,
+    val accent: AccentPreference = AccentPreference.MONET,
+    val customAccentColor: String = "#5B7AA0",
+    val useSystemMonet: Boolean = true,
+    val schemeStyle: ThemeSchemeStyle = ThemeSchemeStyle.TONAL_SPOT,
+    val contrastLevel: ThemeContrastLevel = ThemeContrastLevel.STANDARD,
+    val pureBlackInDark: Boolean = false,
+    val useThemedLauncherIcon: Boolean = true,
+    val outputTreeUri: String? = null,
+    val outputDirectoryLabel: String? = null,
+    val localManagementTreeUri: String? = null,
+    val localManagementDirectoryLabel: String? = null,
+    val localWallpaperViewMode: LocalWallpaperViewMode = LocalWallpaperViewMode.LIST,
+    val homePageSize: Int = DEFAULT_HOME_PAGE_SIZE,
+    val homeColumns: Int = 0,
+    val homeFilterMultiSelect: Boolean = true,
+    val homeSearchFab: Boolean = true,
+    val showHomeTopInfo: Boolean = false,
+    val homeBottomBarAutoHide: Boolean = false,
+    val discoverResultsColumns: Int = 2,
+    val homeCardAction: HomeCardAction = HomeCardAction.DOWNLOAD,
+    val homePaginationMode: HomePaginationMode = HomePaginationMode.INFINITE_SCROLL,
+    val matureContentEnabled: Boolean = false,
+    val maxConcurrentDownloads: Int = DEFAULT_MAX_CONCURRENT_DOWNLOADS,
+    val chunkDownloadConcurrency: Int = DEFAULT_CHUNK_DOWNLOAD_CONCURRENCY,
+    val mpkgConversionPreset: MpkgConversionPreset = MpkgConversionPreset.HIGH_QUALITY,
+    val preserveAudio: Boolean = false,
+    val workshopSourceCacheEnabled: Boolean = true,
+    val workshopSourceCacheBudgetGiB: Int = 5,
+    val downloadProxyUrl: String = "",
+    val downloadProxyEnabled: Boolean = false,
+    val downloadProxyRequiresConfirmation: Boolean = false,
+    val steamAccessEnabled: Boolean = false,
+    val steamAccessMode: SteamAccessMode = SteamAccessMode.SMART_DOH,
+    val steamAccessDohEndpoints: List<String> = DEFAULT_STEAM_ACCESS_DOH_ENDPOINTS,
+    val steamAccessDisabledDohEndpoints: Set<String> = emptySet(),
+    val steamAccessHosts: String = "",
+    val mediaCacheLimitMb: Int = DEFAULT_STREAM_CACHE_MB,
+    val steamApiKey: String = "",
+    val steamWorkshopDataSource: SteamWorkshopDataSource = SteamWorkshopDataSource.COMMUNITY_HTML,
+    /**
+     * Streams a video directly from Steam Depot chunks. This remains opt-in because a
+     * completed local download is more predictable on mobile networks and after app restarts.
+     */
+    val onlineChunkPlaybackEnabled: Boolean = false,
+) {
+    override fun toString(): String =
+        "AppPreferences(" +
+            "setupWizardCompleted=$setupWizardCompleted, theme=$theme, visualStyle=$visualStyle, " +
+            "accent=$accent, customAccentColor=$customAccentColor, " +
+            "useSystemMonet=$useSystemMonet, schemeStyle=$schemeStyle, " +
+            "contrastLevel=$contrastLevel, pureBlackInDark=$pureBlackInDark, " +
+            "useThemedLauncherIcon=$useThemedLauncherIcon, " +
+            "outputTreeUri=$outputTreeUri, outputDirectoryLabel=$outputDirectoryLabel, " +
+            "localManagementTreeUri=$localManagementTreeUri, " +
+            "localManagementDirectoryLabel=$localManagementDirectoryLabel, " +
+            "localWallpaperViewMode=$localWallpaperViewMode, homePageSize=$homePageSize, " +
+            "homeColumns=$homeColumns, homeFilterMultiSelect=$homeFilterMultiSelect, homeSearchFab=$homeSearchFab, " +
+            "showHomeTopInfo=$showHomeTopInfo, homeBottomBarAutoHide=$homeBottomBarAutoHide, " +
+            "discoverResultsColumns=$discoverResultsColumns, " +
+            "homeCardAction=$homeCardAction, homePaginationMode=$homePaginationMode, " +
+            "matureContentEnabled=$matureContentEnabled, maxConcurrentDownloads=$maxConcurrentDownloads, " +
+            "chunkDownloadConcurrency=$chunkDownloadConcurrency, mpkgConversionPreset=$mpkgConversionPreset, " +
+            "preserveAudio=$preserveAudio, workshopSourceCacheEnabled=$workshopSourceCacheEnabled, " +
+            "workshopSourceCacheBudgetGiB=$workshopSourceCacheBudgetGiB, downloadProxyUrl=$downloadProxyUrl, " +
+            "downloadProxyEnabled=$downloadProxyEnabled, " +
+            "downloadProxyRequiresConfirmation=$downloadProxyRequiresConfirmation, " +
+            "steamAccessEnabled=$steamAccessEnabled, steamAccessMode=$steamAccessMode, " +
+            "steamAccessDohEndpoints=$steamAccessDohEndpoints, " +
+            "steamAccessDisabledDohEndpoints=$steamAccessDisabledDohEndpoints, " +
+            "steamAccessHosts=$steamAccessHosts, mediaCacheLimitMb=$mediaCacheLimitMb, " +
+            "steamApiKey=<redacted>, steamWorkshopDataSource=$steamWorkshopDataSource, " +
+            "onlineChunkPlaybackEnabled=$onlineChunkPlaybackEnabled)"
+}
+
+/** The global number of download tasks allowed to run at once. */
+const val MIN_MAX_CONCURRENT_DOWNLOADS = 1
+const val MAX_MAX_CONCURRENT_DOWNLOADS = 8
+const val DEFAULT_MAX_CONCURRENT_DOWNLOADS = 1
+val MAX_CONCURRENT_DOWNLOAD_OPTIONS =
+    (MIN_MAX_CONCURRENT_DOWNLOADS..MAX_MAX_CONCURRENT_DOWNLOADS).toList()
+
+/** Clamps a stored or requested global download limit to the supported range. */
+fun safeMaxConcurrentDownloads(configured: Int): Int =
+    configured.coerceIn(MIN_MAX_CONCURRENT_DOWNLOADS, MAX_MAX_CONCURRENT_DOWNLOADS)
+
+/**
+ * The chunk concurrency a download may ask the SDK for, and the only place that range is defined.
+ *
+ * It is enforced on the way into the store, on the way out of it, and again before the request reaches the
+ * engine. Three copies of it drifted apart: the settings row offered one chunk at a time while both store paths
+ * silently rewrote it to twelve, so the choice could not be made at all.
+ *
+ * The floor is one because the link, not the product, decides how many connections a depot can take, and the
+ * ceiling is the SDK's own client pool (48), so nothing offered here is reduced on the way through.
+ */
+const val MIN_CHUNK_DOWNLOAD_CONCURRENCY = 1
+const val MAX_CHUNK_DOWNLOAD_CONCURRENCY = 48
+const val DEFAULT_CHUNK_DOWNLOAD_CONCURRENCY = 24
+
+/** Clamps a configured chunk concurrency into the range the SDK is given. */
+fun safeChunkDownloadConcurrency(configured: Int): Int =
+    configured.coerceIn(MIN_CHUNK_DOWNLOAD_CONCURRENCY, MAX_CHUNK_DOWNLOAD_CONCURRENCY)
+
+fun normalizeSteamAccessDohEndpoint(raw: String): String? {
+    val value = raw.trim()
+    if (value.isEmpty() || value.length > 2_048) return null
+    val uri = runCatching { URI(value) }.getOrNull() ?: return null
+    val validPort = uri.port == -1 || uri.port in 1..65_535
+    return value.takeIf {
+        uri.scheme.equals("https", ignoreCase = true) &&
+            !uri.host.isNullOrBlank() &&
+            uri.userInfo == null &&
+            uri.fragment == null &&
+            validPort
+    }
+}
+
+fun normalizeSteamAccessDohEndpoints(endpoints: List<String>): List<String> =
+    endpoints
+        .asSequence()
+        .mapNotNull(::normalizeSteamAccessDohEndpoint)
+        .distinct()
+        .take(STEAM_ACCESS_DOH_ENDPOINT_LIMIT)
+        .toList()
+
+fun AppPreferences.enabledSteamAccessDohEndpoints(): List<String> =
+    steamAccessDohEndpoints.filterNot(
+        steamAccessDisabledDohEndpoints::contains,
+    )
+
+fun isSupportedDownloadProxyUrl(raw: String): Boolean {
+    val uri = runCatching { URI(raw.trim()) }.getOrNull() ?: return false
+    val supportedScheme = uri.scheme?.lowercase() in setOf("http", "https", "socks", "socks5")
+    val supportedPath = uri.path.isNullOrEmpty() || uri.path == "/"
+    return supportedScheme &&
+        !uri.host.isNullOrBlank() &&
+        (uri.port == -1 || uri.port in 1..65_535) &&
+        uri.userInfo == null &&
+        uri.query == null &&
+        uri.fragment == null &&
+        supportedPath
+}
+
+data class AppError(
+    val title: String,
+    val message: String,
+    val canRetry: Boolean = false,
+)
+
+enum class DiagnosticLevel {
+    INFO,
+    WARNING,
+    ERROR,
+}
+
+data class DiagnosticEvent(
+    val timestamp: Long = System.currentTimeMillis(),
+    val source: String,
+    val level: DiagnosticLevel,
+    val message: String,
+    val attributes: Map<String, String> = emptyMap(),
+)
+

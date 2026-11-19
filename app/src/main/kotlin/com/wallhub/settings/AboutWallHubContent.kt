@@ -1,0 +1,501 @@
+@file:Suppress("ktlint:standard:function-naming")
+
+package com.wallhub.settings
+
+import androidx.annotation.StringRes
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
+import coil.compose.AsyncImagePainter
+import coil.compose.SubcomposeAsyncImage
+import coil.compose.SubcomposeAsyncImageContent
+import coil.request.ImageRequest
+import com.wallhub.android.R
+import com.wallhub.android.core.designsystem.WallHubSpacing
+import com.wallhub.android.core.designsystem.wallHubStyle
+import com.wallhub.android.core.model.InstalledAppInfo
+import org.uwuaosp.compose.settingslib.PreferenceRow
+import org.uwuaosp.compose.settingslib.SettingsPreferenceGroup
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import java.util.Locale
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Download
+import androidx.compose.material.icons.outlined.PersonOutline
+import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material.icons.outlined.Schedule
+import androidx.compose.material.icons.outlined.Settings
+
+internal data class WallHubPerson(
+    val displayName: String,
+    val githubAccount: String,
+    val githubUserId: Long,
+    @StringRes val roleRes: Int,
+) {
+    val githubUrl: String
+        get() = "https://github.com/$githubAccount"
+
+    val avatarUrl: String
+        get() = "https://avatars.githubusercontent.com/u/$githubUserId?v=4&s=160"
+}
+
+internal const val WALLHUB_QQ_GROUP_NUMBER = "1082323527"
+internal const val WALLHUB_QQ_GROUP_JOIN_URI =
+    "mqqapi://card/show_pslcard?src_type=internal&version=1&uin=$WALLHUB_QQ_GROUP_NUMBER&card_type=group&source=qrcode"
+internal const val WALLHUB_REPOSITORY_LABEL = "ChEnLeo-7/WallHub2.0-For-Android"
+internal const val WALLHUB_REPOSITORY_URL =
+    "https://github.com/ChEnLeo-7/WallHub2.0-For-Android"
+
+internal val WALLHUB_AUTHOR =
+    WallHubPerson(
+        displayName = "CHENLEO_7",
+        githubAccount = "ChEnLeo-7",
+        githubUserId = 136879424L,
+        roleRes = R.string.settings_about_role_author,
+    )
+
+internal val WALLHUB_DEVELOPERS =
+    listOf(
+        WALLHUB_AUTHOR,
+        WallHubPerson(
+            displayName = "uwugl",
+            githubAccount = "uwu-gl",
+            githubUserId = 137363994L,
+            roleRes = R.string.settings_about_role_logo_guidance,
+        ),
+    )
+
+internal val WALLHUB_CONTRIBUTORS =
+    listOf(
+        WallHubPerson(
+            displayName = "cccp114",
+            githubAccount = "cccp114",
+            githubUserId = 138763311L,
+            roleRes = R.string.settings_about_role_logo_ui,
+        ),
+        WallHubPerson(
+            displayName = "hf5203344",
+            githubAccount = "hf5203344",
+            githubUserId = 293614903L,
+            roleRes = R.string.settings_about_role_early_testing,
+        ),
+    )
+
+@Composable
+internal fun AboutWallHubScreen(
+    installed: InstalledAppInfo,
+    appUpdateState: AppUpdateUiState,
+    onBack: () -> Unit,
+    showBackButton: Boolean = true,
+    onCheckForAppUpdate: () -> Unit,
+    onDownloadLatestRelease: () -> Unit,
+    onCancelAppUpdateDownload: () -> Unit,
+    onInstallDownloadedRelease: (String) -> Unit,
+    onOpenExternalUri: (String, String) -> Unit,
+    onRestartSetupWizard: () -> Unit,
+) {
+    WallHubSettingsScaffold(
+        title = stringResource(R.string.settings_about_wallhub_for_android),
+        showBackButton = showBackButton,
+        onNavigateUp = onBack,
+        useCollapsingToolbar = false,
+        containerColor = wallHubStyle().surfaces.page,
+    ) {
+        SettingsSectionSurface(modifier = Modifier.fillMaxWidth()) {
+            WallHubProjectHeader()
+        }
+        Spacer(modifier = Modifier.height(WallHubSpacing.sm))
+        AboutWallHubPreferences(
+            installed = installed,
+            appUpdateState = appUpdateState,
+            onCheckForAppUpdate = onCheckForAppUpdate,
+            onDownloadLatestRelease = onDownloadLatestRelease,
+            onCancelAppUpdateDownload = onCancelAppUpdateDownload,
+            onInstallDownloadedRelease = onInstallDownloadedRelease,
+            onOpenExternalUri = onOpenExternalUri,
+            onRestartSetupWizard = onRestartSetupWizard,
+        )
+    }
+}
+
+@Composable
+internal fun AboutWallHubPreferences(
+    installed: InstalledAppInfo,
+    appUpdateState: AppUpdateUiState,
+    onCheckForAppUpdate: () -> Unit,
+    onDownloadLatestRelease: () -> Unit,
+    onCancelAppUpdateDownload: () -> Unit,
+    onInstallDownloadedRelease: (String) -> Unit,
+    onOpenExternalUri: (String, String) -> Unit,
+    onRestartSetupWizard: () -> Unit,
+) {
+    val openAuthorFailure = stringResource(R.string.settings_error_open_author_profile)
+    val openContributorFailure = stringResource(R.string.settings_error_open_contributor_profile)
+    val openQqGroupFailure = stringResource(R.string.settings_error_open_qq_group)
+    val openRepositoryFailure = stringResource(R.string.settings_error_open_github_repository)
+
+    WallHubPeopleSection(
+        title = stringResource(R.string.settings_about_developers),
+        people = WALLHUB_DEVELOPERS,
+        openFailureMessage = openAuthorFailure,
+        onOpenExternalUri = onOpenExternalUri,
+    )
+    Spacer(modifier = Modifier.height(WallHubSpacing.sm))
+    WallHubPeopleSection(
+        title = stringResource(R.string.settings_about_contributors),
+        people = WALLHUB_CONTRIBUTORS,
+        openFailureMessage = openContributorFailure,
+        onOpenExternalUri = onOpenExternalUri,
+    )
+    Spacer(modifier = Modifier.height(WallHubSpacing.sm))
+    val checkingForUpdate = appUpdateState.phase == AppUpdatePhase.CHECKING
+    SettingsPreferenceGroup {
+        item {
+            PreferenceRow(
+                title =
+                    stringResource(
+                        if (checkingForUpdate) {
+                            R.string.settings_about_checking_updates
+                        } else {
+                            R.string.settings_about_version_check
+                        },
+                    ),
+                summary =
+                    stringResource(
+                        if (checkingForUpdate) {
+                            R.string.settings_about_current_version
+                        } else {
+                            R.string.settings_about_current_version_check
+                        },
+                        installed.versionName,
+                    ),
+                icon = Icons.Outlined.Refresh,
+                enabled = appUpdateState.phase !in setOf(AppUpdatePhase.CHECKING, AppUpdatePhase.DOWNLOADING),
+                onClick = onCheckForAppUpdate,
+            )
+        }
+        item {
+            PreferenceRow(
+                title = stringResource(R.string.settings_about_update_date),
+                summary = formatAppUpdateDate(installed.lastUpdateTimeMillis),
+                icon = Icons.Outlined.Schedule,
+                onClick = null,
+            )
+        }
+        item {
+            PreferenceRow(
+                title = stringResource(R.string.settings_about_github_repository),
+                summary = WALLHUB_REPOSITORY_LABEL,
+                iconContent = {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_brand_github),
+                        contentDescription = null,
+                        modifier = Modifier.size(24.dp),
+                    )
+                },
+                onClick = {
+                    onOpenExternalUri(
+                        WALLHUB_REPOSITORY_URL,
+                        openRepositoryFailure,
+                    )
+                },
+            )
+        }
+        item {
+            PreferenceRow(
+                title = stringResource(R.string.settings_about_qq_group),
+                summary = stringResource(R.string.settings_about_qq_group_description, WALLHUB_QQ_GROUP_NUMBER),
+                iconContent = {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_brand_qq),
+                        contentDescription = null,
+                        modifier = Modifier.size(24.dp),
+                    )
+                },
+                onClick = {
+                    onOpenExternalUri(
+                        WALLHUB_QQ_GROUP_JOIN_URI,
+                        openQqGroupFailure,
+                    )
+                },
+            )
+        }
+    }
+    Spacer(modifier = Modifier.height(WallHubSpacing.sm))
+    SettingsPreferenceGroup {
+        item {
+            PreferenceRow(
+                title = stringResource(R.string.settings_restart_setup_wizard),
+                summary = stringResource(R.string.settings_restart_setup_wizard_description),
+                icon = Icons.Outlined.Settings,
+                onClick = onRestartSetupWizard,
+            )
+        }
+    }
+    AboutUpdateActions(
+        appUpdateState = appUpdateState,
+        onDownloadLatestRelease = onDownloadLatestRelease,
+        onCancelAppUpdateDownload = onCancelAppUpdateDownload,
+        onInstallDownloadedRelease = onInstallDownloadedRelease,
+    )
+}
+
+@Composable
+private fun WallHubPeopleSection(
+    title: String,
+    people: List<WallHubPerson>,
+    openFailureMessage: String,
+    onOpenExternalUri: (String, String) -> Unit,
+) {
+    SettingsSection(title = title) {
+        people.forEach { person ->
+            item {
+                WallHubPersonRow(
+                    person = person,
+                    onClick = {
+                        onOpenExternalUri(
+                            person.githubUrl,
+                            openFailureMessage,
+                        )
+                    },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun WallHubProjectHeader() {
+    Column(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .padding(horizontal = WallHubSpacing.lg, vertical = WallHubSpacing.section),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(WallHubSpacing.compact),
+    ) {
+        Image(
+            painter = painterResource(R.drawable.wallhub_logo),
+            contentDescription = stringResource(R.string.settings_about_wallhub_logo),
+            contentScale = ContentScale.Fit,
+            modifier =
+                Modifier
+                    .size(156.dp)
+                    .clip(MaterialTheme.shapes.extraLarge),
+        )
+        Text(
+            text = stringResource(R.string.settings_wallhub_project_title),
+            style = MaterialTheme.typography.headlineSmall,
+            fontWeight = FontWeight.SemiBold,
+            textAlign = TextAlign.Center,
+        )
+        Text(
+            text =
+                stringResource(R.string.settings_about_project_description),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.widthIn(max = 560.dp),
+        )
+    }
+}
+
+@Composable
+private fun WallHubPersonRow(
+    person: WallHubPerson,
+    onClick: () -> Unit,
+) {
+    PreferenceRow(
+        title = person.displayName,
+        summary = stringResource(person.roleRes),
+        modifier = Modifier.heightIn(min = 72.dp),
+        iconContent = { GitHubAvatar(person = person) },
+        onClick = onClick,
+    )
+}
+
+@Composable
+private fun GitHubAvatar(person: WallHubPerson) {
+    SubcomposeAsyncImage(
+        model =
+            ImageRequest
+                .Builder(LocalContext.current)
+                .data(person.avatarUrl)
+                .crossfade(true)
+                .build(),
+        contentDescription =
+            stringResource(R.string.settings_about_github_avatar, person.displayName),
+        contentScale = ContentScale.Crop,
+        modifier =
+            Modifier
+                .size(52.dp)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.surfaceContainerHighest),
+    ) {
+        if (painter.state is AsyncImagePainter.State.Success) {
+            SubcomposeAsyncImageContent()
+        } else {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Icon(
+                    imageVector = Icons.Outlined.PersonOutline,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(26.dp),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun AboutUpdateActions(
+    appUpdateState: AppUpdateUiState,
+    onDownloadLatestRelease: () -> Unit,
+    onCancelAppUpdateDownload: () -> Unit,
+    onInstallDownloadedRelease: (String) -> Unit,
+) {
+    val downloadedPath = appUpdateState.downloadedApkPath
+    val updateAction =
+        when {
+            appUpdateState.phase == AppUpdatePhase.DOWNLOADING -> AboutUpdateAction.DOWNLOADING
+            downloadedPath != null -> AboutUpdateAction.INSTALL
+            appUpdateState.canDownloadRelease -> AboutUpdateAction.DOWNLOAD
+            else -> AboutUpdateAction.NONE
+        }
+    val hasActions = updateAction != AboutUpdateAction.NONE || appUpdateState.message != null
+
+    AnimatedVisibility(
+        visible = hasActions,
+        enter = fadeIn(tween(180)),
+        exit = fadeOut(tween(120)),
+        label = "AboutUpdateActions",
+    ) {
+        Column(modifier = Modifier.fillMaxWidth()) {
+            Spacer(modifier = Modifier.height(WallHubSpacing.sm))
+            AnimatedContent(
+                targetState = updateAction,
+                transitionSpec = { fadeIn(tween(180)) togetherWith fadeOut(tween(120)) },
+                label = "AboutUpdateAction",
+            ) { displayedAction ->
+                when (displayedAction) {
+                    AboutUpdateAction.DOWNLOADING -> {
+                        SettingsPreferenceGroup {
+                            item {
+                                SettingsSectionSurface {
+                                    Column(
+                                        modifier = Modifier.fillMaxWidth().padding(vertical = WallHubSpacing.sm),
+                                        verticalArrangement = Arrangement.spacedBy(WallHubSpacing.dense),
+                                    ) {
+                                        LinearProgressIndicator(
+                                            progress = { appUpdateState.progress },
+                                            modifier = Modifier.fillMaxWidth(),
+                                        )
+                                        Text(
+                                            text =
+                                                "${formatAboutUpdateSize(appUpdateState.downloadedBytes)} / " +
+                                                    formatAboutUpdateSize(appUpdateState.totalBytes),
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
+                                }
+                            }
+                            item {
+                                SettingsActionPreference(
+                                    title = stringResource(R.string.settings_action_cancel_download),
+                                    icon = Icons.Outlined.Download,
+                                    onClick = onCancelAppUpdateDownload,
+                                )
+                            }
+                        }
+                    }
+
+                    AboutUpdateAction.INSTALL ->
+                        SettingsActionPreference(
+                            title = stringResource(R.string.settings_action_install_with_android_installer),
+                            icon = Icons.Outlined.Download,
+                            onClick = { downloadedPath?.let(onInstallDownloadedRelease) },
+                        )
+
+                    AboutUpdateAction.DOWNLOAD ->
+                        SettingsActionPreference(
+                            title = stringResource(R.string.settings_action_download_latest_apk),
+                            icon = Icons.Outlined.Download,
+                            onClick = onDownloadLatestRelease,
+                        )
+
+                    AboutUpdateAction.NONE -> Unit
+                }
+            }
+            appUpdateState.message?.let { message ->
+                Spacer(modifier = Modifier.height(WallHubSpacing.sm))
+                SettingsStatusMessage(
+                    message = message,
+                    isFailure = true,
+                )
+            }
+        }
+    }
+}
+
+private enum class AboutUpdateAction {
+    NONE,
+    DOWNLOADING,
+    DOWNLOAD,
+    INSTALL,
+}
+
+internal fun formatAppUpdateDate(
+    epochMillis: Long,
+    zoneId: ZoneId = ZoneId.systemDefault(),
+): String =
+    if (epochMillis > 0L) {
+        Instant
+            .ofEpochMilli(epochMillis)
+            .atZone(zoneId)
+            .toLocalDate()
+            .format(DateTimeFormatter.ISO_LOCAL_DATE)
+    } else {
+        "—"
+    }
+
+private fun formatAboutUpdateSize(bytes: Long): String =
+    String.format(
+        Locale.getDefault(),
+        "%.1f MB",
+        bytes.coerceAtLeast(0L) / (1024.0 * 1024.0),
+    )

@@ -1,0 +1,791 @@
+@file:Suppress("ktlint:standard:function-naming")
+
+package com.wallhub.android.feature.detail
+
+import android.content.Context
+import android.os.SystemClock
+import android.util.Log
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.lifecycle.SavedStateHandle
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import androidx.media3.exoplayer.ExoPlayer
+import com.wallhub.android.R
+import com.wallhub.android.core.designsystem.localizedTitle
+import com.wallhub.android.core.model.AccountWorkshopRepository
+import com.wallhub.android.core.model.DownloadAction
+import com.wallhub.android.core.model.DownloadEnqueueResult
+import com.wallhub.android.core.model.DownloadRequest
+import com.wallhub.android.core.model.DownloadStatus
+import com.wallhub.android.core.model.WorkshopAuthorPlaceholder
+import com.wallhub.android.core.model.WorkshopDownloads
+import com.wallhub.android.core.model.ExportFormat
+import com.wallhub.android.core.model.FavoriteState
+import com.wallhub.android.core.model.MpkgConversionPreset
+import com.wallhub.android.core.model.SettingsRepository
+import com.wallhub.android.core.model.SteamSessionPhase
+import com.wallhub.android.core.model.SteamSessionRepository
+import com.wallhub.android.core.model.SubscriptionState
+import com.wallhub.android.core.model.WORKSHOP_COMMENT_MAX_LENGTH
+import com.wallhub.android.core.model.WorkshopInteraction
+import com.wallhub.android.core.model.WorkshopRepository
+import com.wallhub.android.core.model.WorkshopType
+import com.wallhub.android.core.model.WorkshopVideoOpenRequest
+import com.wallhub.android.core.model.WorkshopVideoStreamRepository
+import com.wallhub.android.core.model.WorkshopVideoStreamSession
+import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.receiveAsFlow
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.yield
+import javax.inject.Inject
+
+@HiltViewModel
+class WorkshopDetailViewModel
+    @Inject
+    constructor(
+        savedStateHandle: SavedStateHandle,
+        @ApplicationContext private val applicationContext: Context,
+        private val workshopRepository: WorkshopRepository,
+        private val accountWorkshopRepository: AccountWorkshopRepository,
+        private val steamSessionRepository: SteamSessionRepository,
+        private val workshopDownloads: WorkshopDownloads,
+        private val settingsRepository: SettingsRepository,
+        private val videoStreamRepository: WorkshopVideoStreamRepository,
+    ) : ViewModel() {
+        private val workshopId = checkNotNull(savedStateHandle.get<Long>("workshopId"))
+        private val mutableState = MutableStateFlow(WorkshopDetailUiState())
+        private val effectChannel = Channel<WorkshopDetailEffect>(capacity = Channel.BUFFERED)
+        private val inlinePlaybackStartNoticeGate = PlaybackStartNoticeGate()
+        private var detailLoadJob: Job? = null
+        private var interactionLoadJob: Job? = null
+        private var inlineVideoLoadJob: Job? = null
+        private var commentsLoadJob: Job? = null
+        private var interactionRequestVersion = 0L
+        private var interactionAccountId: Long? = null
+        private var interactionLoadAccountId: Long? = null
+
+        val uiState: StateFlow<WorkshopDetailUiState> = mutableState.asStateFlow()
+        val effects: Flow<WorkshopDetailEffect> = effectChannel.receiveAsFlow()
+
+        fun consumeInlinePlaybackStartNotice(): Boolean = inlinePlaybackStartNoticeGate.consume()
+
+        fun onAction(action: WorkshopDetailAction) {
+            action.immediateEffect()?.let(::emitEffect) ?: when (action) {
+                is WorkshopDetailAction.LegacyStoragePermissionResult -> {
+                    if (action.granted) {
+                        executePendingOperation(action.operation)
+                    } else {
+                        emitEffect(
+                            WorkshopDetailEffect.ShowMessage(
+                                DetailUiText.Resource(R.string.detail_storage_permission_denied),
+                            ),
+                        )
+                    }
+                }
+                else -> Unit
+            }
+        }
+
+        private fun executePendingOperation(operation: WorkshopDetailPendingOperation) {
+            when (operation) {
+                WorkshopDetailPendingOperation.Download -> enqueueDownload()
+                WorkshopDetailPendingOperation.LocalVideoPlayback -> requestLocalVideoPlayback()
+                is WorkshopDetailPendingOperation.ConvertExisting -> convertExistingDownload(operation.format)
+            }
+        }
+
+        private fun emitEffect(effect: WorkshopDetailEffect) {
+            effectChannel.trySend(effect)
+        }
+
+        init {
+            workshopRepository.peekDetailSeed(workshopId)?.let { seed ->
+                mutableState.value = applyDetailSeed(mutableState.value, seed)
+            }
+            viewModelScope.launch {
+                steamSessionRepository.session.collect { session ->
+                    interactionRequestVersion += 1
+                    interactionLoadJob?.cancel()
+                    interactionLoadJob = null
+                    interactionAccountId = null
+                    interactionLoadAccountId = null
+                    mutableState.value =
+                        mutableState.value.copy(
+                            steamSession = session,
+                            interaction = WorkshopInteraction(),
+                            isLoadingInteraction = false,
+                            isUpdatingInteraction = false,
+                            isPostingComment =
+                                if (session.phase == SteamSessionPhase.SIGNED_IN) {
+                                    mutableState.value.isPostingComment
+                                } else {
+                                    false
+                                },
+                        )
+                    if (session.phase == SteamSessionPhase.SIGNED_IN) {
+                        viewModelScope.launch {
+                            yield()
+                            refreshInteraction()
+                        }
+                    }
+                }
+            }
+            viewModelScope.launch {
+                settingsRepository.preferences.collect { preferences ->
+                    mutableState.value =
+                        mutableState.value.copy(
+                            outputTreeUri = preferences.outputTreeUri,
+                            outputDirectoryLabel = preferences.outputDirectoryLabel,
+                            mpkgConversionPreset = preferences.mpkgConversionPreset,
+                            preserveAudio = preferences.preserveAudio,
+                            onlineChunkPlaybackEnabled = preferences.onlineChunkPlaybackEnabled,
+                        )
+                    if (!preferences.onlineChunkPlaybackEnabled) stopInlineVideoPlayback()
+                }
+            }
+            viewModelScope.launch {
+                workshopDownloads.tasks.collect { tasks ->
+                    val localVideoTask =
+                        tasks.firstOrNull { task ->
+                            task.workshopId == workshopId &&
+                                task.type == WorkshopType.VIDEO &&
+                                task.status == DownloadStatus.COMPLETED &&
+                                !task.stagingDirectory.isNullOrBlank()
+                        }
+                    val stagedTask =
+                        tasks.firstOrNull { task ->
+                            task.workshopId == workshopId &&
+                                task.status == DownloadStatus.COMPLETED &&
+                                !task.stagingDirectory.isNullOrBlank() &&
+                                task.outputUri == null
+                        }
+                    val activeVideoTask =
+                        tasks.firstOrNull { task ->
+                            task.workshopId == workshopId &&
+                                task.type == WorkshopType.VIDEO &&
+                                task.status !in
+                                setOf(
+                                    DownloadStatus.COMPLETED,
+                                    DownloadStatus.FAILED,
+                                    DownloadStatus.CANCELLED,
+                                )
+                        }
+                    val current = mutableState.value
+                    val shouldOpenLocalVideo =
+                        current.waitingForLocalVideoPlayback && localVideoTask != null
+                    mutableState.value =
+                        current.copy(
+                            localVideoTaskId = localVideoTask?.id,
+                            activeVideoTaskId = activeVideoTask?.id,
+                            stagedTaskId = stagedTask?.id,
+                            waitingForLocalVideoPlayback =
+                                if (shouldOpenLocalVideo) {
+                                    false
+                                } else {
+                                    current.waitingForLocalVideoPlayback
+                                },
+                        )
+                    if (shouldOpenLocalVideo) {
+                        effectChannel.send(WorkshopDetailEffect.OpenLocalVideo(localVideoTask.id))
+                    }
+                }
+            }
+            reload()
+        }
+
+        fun reload() {
+            detailLoadJob?.cancel()
+            commentsLoadJob?.cancel()
+            commentsLoadJob = null
+            inlineVideoLoadJob?.cancel()
+            inlineVideoLoadJob = null
+            val current = mutableState.value
+            current.inlineVideoStream?.close()
+            current.inlineVideoPlayer?.release()
+            mutableState.value =
+                resetCommentsForDetailReload(beginDetailRefresh(current)).copy(
+                    inlineVideoStream = null,
+                    inlineVideoPlayer = null,
+                    isInlineVideoFullscreen = false,
+                    isLoadingInlineVideo = false,
+                    inlineVideoError = null,
+                )
+            refreshInteraction()
+            detailLoadJob = viewModelScope.launch {
+                if (shouldAutoLoadComments(mutableState.value)) {
+                    loadComments(refresh = true)
+                }
+                runCatching { workshopRepository.getDetail(workshopId) }
+                    .onSuccess { detail ->
+                        ensureActive()
+                        val current = mutableState.value
+                        mutableState.value =
+                            current.copy(
+                                detail = detail,
+                                isLoading = false,
+                                error = null,
+                                exportFormat = detail.summary.type.defaultExportFormat(),
+                            )
+                        // Let the first content frame render before starting secondary reads and state writes.
+                        viewModelScope.launch {
+                            yield()
+                            if (shouldAutoLoadComments(mutableState.value)) {
+                                loadComments(refresh = true)
+                            }
+                            val author =
+                                runCatching {
+                                    detail.summary.creatorId?.let {
+                                        accountWorkshopRepository.resolveAuthorDisplayNameByAccountId(it)
+                                    }
+                                }
+                                    .getOrNull()
+                                    ?.takeIf(String::isNotBlank)
+                            if (author != null) {
+                                mutableState.value =
+                                    mutableState.value.let { state ->
+                                        val loaded = state.detail ?: return@let state
+                                        state.copy(
+                                            detail =
+                                                loaded.copy(
+                                                    summary = loaded.summary.copy(
+                                                        author = author,
+                                                        authorPlaceholder = WorkshopAuthorPlaceholder.NONE,
+                                                    ),
+                                                ),
+                                        )
+                                    }
+                            }
+                        }
+                    }.onFailure { error ->
+                        if (error is CancellationException) throw error
+                        ensureActive()
+                        val current = mutableState.value
+                        mutableState.value =
+                            current.copy(
+                                isLoading = false,
+                                error =
+                                    if (current.detail == null) {
+                                        error.toDetailUiText(R.string.detail_workshop_load_failed)
+                                    } else {
+                                        null
+                                    },
+                            )
+                    }
+            }
+        }
+
+        fun startInlineVideoPlayback() = startInlineVideoPlayback(0L)
+
+        fun startPreferredVideoPlayback() {
+            if (mutableState.value.localVideoTaskId != null) {
+                requestLocalVideoPlayback()
+            } else {
+                startInlineVideoPlayback()
+            }
+        }
+
+        fun retryInlineVideoPlayback() {
+            val resumePositionMs = mutableState.value.inlineVideoPlayer?.currentPosition?.coerceAtLeast(0L) ?: 0L
+            stopInlineVideoPlayback()
+            startInlineVideoPlayback(resumePositionMs)
+        }
+
+        private fun startInlineVideoPlayback(resumePositionMs: Long) {
+            val current = mutableState.value
+            if (
+                current.detail?.summary?.type != WorkshopType.VIDEO ||
+                !current.onlineChunkPlaybackEnabled ||
+                current.inlineVideoStream != null ||
+                current.isLoadingInlineVideo
+            ) {
+                return
+            }
+            mutableState.value = current.copy(isLoadingInlineVideo = true, inlineVideoError = null)
+            inlineVideoLoadJob =
+                viewModelScope.launch {
+                    var openedStream: WorkshopVideoStreamSession? = null
+                    var openedPlayer: ExoPlayer? = null
+                    try {
+                        openedStream =
+                            videoStreamRepository.open(
+                                WorkshopVideoOpenRequest.from(checkNotNull(mutableState.value.detail)),
+                            )
+                        coroutineContext.ensureActive()
+                        openedPlayer =
+                            createSteamChunkPlayer(
+                                context = applicationContext,
+                                stream = openedStream,
+                                startPositionMs = resumePositionMs,
+                            )
+                        mutableState.value =
+                            mutableState.value.copy(
+                                inlineVideoStream = openedStream,
+                                inlineVideoPlayer = openedPlayer,
+                                isInlineVideoFullscreen = false,
+                                isLoadingInlineVideo = false,
+                                inlineVideoError = null,
+                            )
+                        openedStream = null
+                        openedPlayer = null
+                    } catch (error: CancellationException) {
+                        throw error
+                    } catch (error: Throwable) {
+                        openedPlayer?.release()
+                        openedPlayer = null
+                        mutableState.value =
+                            mutableState.value.copy(
+                                inlineVideoStream = null,
+                                inlineVideoPlayer = null,
+                                isInlineVideoFullscreen = false,
+                                isLoadingInlineVideo = false,
+                                inlineVideoError = error.toDetailUiText(R.string.detail_inline_video_init_failed),
+                            )
+                    } finally {
+                        openedStream?.close()
+                    }
+                }
+        }
+
+        fun stopInlineVideoPlayback() {
+            inlineVideoLoadJob?.cancel()
+            inlineVideoLoadJob = null
+            val current = mutableState.value
+            current.inlineVideoStream?.close()
+            current.inlineVideoPlayer?.release()
+            mutableState.value =
+                current.copy(
+                    inlineVideoStream = null,
+                    inlineVideoPlayer = null,
+                    isInlineVideoFullscreen = false,
+                    isLoadingInlineVideo = false,
+                    inlineVideoError = null,
+                )
+        }
+
+        fun setInlineVideoFullscreen(fullscreen: Boolean) {
+            val current = mutableState.value
+            if (current.isInlineVideoFullscreen == fullscreen) return
+            if (fullscreen && (current.inlineVideoStream == null || current.inlineVideoPlayer == null)) return
+            mutableState.value = current.copy(isInlineVideoFullscreen = fullscreen)
+        }
+
+        fun onCommentsVisible() {
+            val current = mutableState.value
+            if (current.commentsRequested || current.detail == null) return
+            loadComments(refresh = true)
+        }
+
+        fun retryComments() {
+            loadComments(refresh = true)
+        }
+
+        fun loadMoreComments() {
+            loadComments(refresh = false)
+        }
+
+        fun updateCommentDraft(value: String) {
+            mutableState.value =
+                mutableState.value.copy(
+                    commentDraft = value.take(WORKSHOP_COMMENT_MAX_LENGTH),
+                    commentPostError = null,
+                )
+        }
+
+        fun submitComment() {
+            val current = mutableState.value
+            if (current.steamSession.phase != SteamSessionPhase.SIGNED_IN || current.isPostingComment) return
+            val detail = current.detail ?: return
+            val ownerId = current.commentsOwnerId ?: detail.creatorId ?: detail.summary.creatorId
+            if (ownerId.isNullOrBlank()) {
+                mutableState.value =
+                    current.copy(
+                        commentPostError = DetailUiText.Resource(R.string.detail_comment_author_unknown),
+                    )
+                return
+            }
+            val comment = current.commentDraft.trim()
+            if (comment.isEmpty()) return
+            viewModelScope.launch {
+                mutableState.value =
+                    mutableState.value.copy(
+                        isPostingComment = true,
+                        commentPostError = null,
+                    )
+                runCatching {
+                    accountWorkshopRepository.postComment(workshopId, ownerId, comment)
+                }.onSuccess {
+                    mutableState.value =
+                        mutableState.value.copy(
+                            commentDraft = "",
+                            isPostingComment = false,
+                            commentPostError = null,
+                        )
+                    loadComments(refresh = true)
+                }.onFailure { error ->
+                    mutableState.value =
+                        mutableState.value.copy(
+                            isPostingComment = false,
+                            commentPostError = error.toDetailUiText(R.string.detail_comment_post_failed),
+                        )
+                }
+            }
+        }
+
+        private fun loadComments(refresh: Boolean) {
+            val current = mutableState.value
+            val detail = current.detail ?: return
+            if (refresh) {
+                if (current.isLoadingComments) return
+                commentsLoadJob?.cancel()
+            } else if (
+                current.isLoadingComments || current.isLoadingMoreComments || !current.commentsHasMore
+            ) {
+                return
+            }
+            val start = if (refresh) 0 else current.commentsNextStart
+            val requestGeneration = current.commentsRequestGeneration
+            mutableState.value = beginCommentsRequest(current, refresh)
+            commentsLoadJob =
+                viewModelScope.launch {
+                    val startedAtMs = SystemClock.elapsedRealtime()
+                    Log.d(COMMENTS_LOG_TAG, "comments begin workshopId=$workshopId start=$start refresh=$refresh")
+                    try {
+                        runCatching {
+                            withTimeout(COMMENTS_LOAD_TIMEOUT_MS) {
+                                workshopRepository.getComments(
+                                    workshopId = workshopId,
+                                    start = start,
+                                    count = COMMENTS_PAGE_SIZE,
+                                    ownerId =
+                                        current.commentsOwnerId ?: detail.creatorId ?: detail.summary.creatorId,
+                                )
+                            }
+                        }.onSuccess { page ->
+                            val latest = mutableState.value
+                            val comments =
+                                if (refresh) {
+                                    page.comments
+                                } else {
+                                    (latest.comments + page.comments).distinctBy { comment ->
+                                        listOf(comment.author, comment.timestamp, comment.text).joinToString("\u001f")
+                                    }
+                                }
+                            mutableState.value =
+                                completeCommentsRequest(latest, requestGeneration) {
+                                    copy(
+                                        comments = comments,
+                                        commentsTotal = page.total,
+                                        commentsNextStart = page.nextStart,
+                                        commentsHasMore = page.hasMore,
+                                        commentsOwnerId = page.ownerId ?: commentsOwnerId ?: detail.creatorId,
+                                        isLoadingComments = false,
+                                        isLoadingMoreComments = false,
+                                        commentsError = null,
+                                    )
+                                }
+                        }.onFailure { error ->
+                            if (error is CancellationException && error !is TimeoutCancellationException) throw error
+                            mutableState.value =
+                                completeCommentsRequest(mutableState.value, requestGeneration) {
+                                    copy(
+                                        isLoadingComments = false,
+                                        isLoadingMoreComments = false,
+                                        commentsError =
+                                            if (error is TimeoutCancellationException) {
+                                                DetailUiText.Resource(R.string.detail_comments_load_failed)
+                                            } else {
+                                                error.toDetailUiText(R.string.detail_comments_load_failed)
+                                            },
+                                    )
+                                }
+                        }
+                    } finally {
+                        Log.d(
+                            COMMENTS_LOG_TAG,
+                            "comments complete workshopId=$workshopId start=$start ms=${SystemClock.elapsedRealtime() - startedAtMs}",
+                        )
+                    }
+                }
+        }
+
+        fun toggleSubscription() {
+            val current = mutableState.value
+            val session = current.steamSession
+            if (session.phase != SteamSessionPhase.SIGNED_IN || !session.isConnected) return
+            val accountName = session.accountName ?: return
+            if (!current.interaction.canToggleSubscription(current.isUpdatingInteraction, canSubmitUnknownState = true)) return
+            val requestedState = current.interaction.requestedSubscriptionState()
+            updateInteraction(
+                successMessage =
+                    if (requestedState) R.string.detail_subscribe_submitted else R.string.detail_unsubscribe_submitted,
+                expectedAccountName = accountName,
+                optimisticInteraction = WorkshopInteraction(
+                    subscriptionState = if (requestedState) SubscriptionState.SUBSCRIBED else SubscriptionState.NOT_SUBSCRIBED,
+                ),
+            ) {
+                accountWorkshopRepository.setSubscribedForCurrentAccount(
+                    accountName,
+                    workshopId,
+                    requestedState,
+                    current.detail?.summary,
+                )
+            }
+        }
+
+        fun toggleFavorite() {
+            val current = mutableState.value
+            val session = current.steamSession
+            if (session.phase != SteamSessionPhase.SIGNED_IN || !session.isConnected) return
+            val accountName = session.accountName ?: return
+            if (!current.interaction.canToggleFavorite(current.isUpdatingInteraction, canSubmitUnknownState = true)) return
+            val requestedState = current.interaction.requestedFavoriteState()
+            updateInteraction(
+                successMessage =
+                    if (requestedState) R.string.detail_favorite_submitted else R.string.detail_unfavorite_submitted,
+                expectedAccountName = accountName,
+                optimisticInteraction = WorkshopInteraction(
+                    favoriteState = if (requestedState) FavoriteState.FAVORITED else FavoriteState.NOT_FAVORITED,
+                ),
+            ) {
+                accountWorkshopRepository.setFavoritedForCurrentAccount(
+                    accountName,
+                    workshopId,
+                    requestedState,
+                    current.detail?.summary,
+                )
+            }
+        }
+
+        fun reconnectSteamSession() {
+            mutableState.value = mutableState.value.copy(interactionMessage = null)
+            steamSessionRepository.reconnectPersistedSession()
+        }
+
+        fun enqueueDownload(playWhenReady: Boolean = false) {
+            val current = mutableState.value
+            val detail = current.detail ?: return
+            viewModelScope.launch {
+                mutableState.value =
+                    mutableState.value.copy(
+                        isEnqueuingDownload = true,
+                        downloadMessage = null,
+                    )
+                runCatching {
+                    workshopDownloads.enqueue(
+                        DownloadRequest(
+                            workshopId = detail.summary.id,
+                            title = applicationContext.localizedTitle(detail.summary),
+                            type = detail.summary.type,
+                            previewUrl = detail.summary.previewUrl,
+                            expectedTotalBytes = detail.summary.fileSizeBytes ?: 0L,
+                            outputTreeUri = current.outputTreeUri,
+                            exportFormat = current.exportFormat,
+                            mpkgConversionPreset = current.mpkgConversionPreset,
+                            preserveAudio =
+                                current.preserveAudio &&
+                                    detail.summary.type == WorkshopType.SCENE &&
+                                    current.exportFormat == ExportFormat.MPKG,
+                        ),
+                    )
+                }.onSuccess { result ->
+                    mutableState.value =
+                        mutableState.value.copy(
+                            isEnqueuingDownload = false,
+                            waitingForLocalVideoPlayback = playWhenReady,
+                            downloadMessage =
+                                when {
+                                    playWhenReady && result is DownloadEnqueueResult.Created ->
+                                        DetailUiText.Resource(R.string.detail_video_queued_for_playback)
+                                    playWhenReady ->
+                                        DetailUiText.Resource(R.string.detail_video_downloading_for_playback)
+                                    result is DownloadEnqueueResult.Created ->
+                                        DetailUiText.Resource(
+                                            R.string.detail_added_to_download_queue,
+                                            listOf(result.task.title),
+                                        )
+                                    else ->
+                                        DetailUiText.Resource(
+                                            R.string.download_already_active,
+                                            listOf(result.task.title),
+                                        )
+                                },
+                        )
+                }.onFailure { error ->
+                    mutableState.value =
+                        mutableState.value.copy(
+                            isEnqueuingDownload = false,
+                            downloadMessage = error.toDetailUiText(R.string.detail_download_enqueue_failed),
+                        )
+                }
+            }
+        }
+
+        fun requestLocalVideoPlayback() {
+            val current = mutableState.value
+            val localVideoTaskId = current.localVideoTaskId
+            when {
+                localVideoTaskId != null -> {
+                    emitEffect(WorkshopDetailEffect.OpenLocalVideo(localVideoTaskId))
+                }
+
+                current.activeVideoTaskId != null -> {
+                    mutableState.value =
+                        current.copy(
+                            waitingForLocalVideoPlayback = true,
+                            downloadMessage = DetailUiText.Resource(R.string.detail_video_downloading_for_playback),
+                        )
+                }
+
+                else -> enqueueDownload(playWhenReady = true)
+            }
+        }
+
+        fun selectExportFormat(format: ExportFormat) {
+            val detail = mutableState.value.detail ?: return
+            if (format !in detail.summary.type.availableExportFormats()) return
+            mutableState.value = mutableState.value.copy(exportFormat = format)
+        }
+
+        fun selectMpkgConversionPreset(preset: MpkgConversionPreset) {
+            mutableState.value = mutableState.value.copy(mpkgConversionPreset = preset)
+        }
+
+        fun setPreserveAudio(enabled: Boolean) {
+            mutableState.value = mutableState.value.copy(preserveAudio = enabled)
+            viewModelScope.launch { settingsRepository.setPreserveAudio(enabled) }
+        }
+
+        fun convertExistingDownload(format: ExportFormat) {
+            val taskId = mutableState.value.stagedTaskId ?: return
+            viewModelScope.launch {
+                runCatching {
+                    workshopDownloads.requestExport(taskId, format)
+                }.onSuccess {
+                    mutableState.value =
+                        mutableState.value.copy(
+                            downloadMessage = DetailUiText.Resource(R.string.detail_conversion_started),
+                        )
+                }.onFailure { error ->
+                    mutableState.value =
+                        mutableState.value.copy(
+                            downloadMessage = error.toDetailUiText(R.string.detail_conversion_failed),
+                        )
+                }
+            }
+        }
+
+        private fun refreshInteraction() {
+            if (mutableState.value.isUpdatingInteraction || interactionLoadJob?.isActive == true) return
+            val requestVersion = ++interactionRequestVersion
+            mutableState.value = mutableState.value.copy(isLoadingInteraction = true, interactionMessage = null)
+            interactionLoadJob =
+                viewModelScope.launch {
+                    runCatching {
+                        withContext(Dispatchers.IO) {
+                            val accountId = accountWorkshopRepository.activeAccountId() ?: return@withContext null
+                            val accountName = accountWorkshopRepository.activeAccountName()
+                            val interaction = accountWorkshopRepository.getInteraction(workshopId)
+                            check(accountWorkshopRepository.activeAccountId() == accountId) {
+                                "Steam account changed while loading interaction"
+                            }
+                            Triple(accountId, accountName, interaction)
+                        }
+                    }.onSuccess { result ->
+                        if (requestVersion != interactionRequestVersion) return@onSuccess
+                        interactionAccountId = result?.first
+                        mutableState.value =
+                            mutableState.value.copy(
+                                interaction = mutableState.value.interaction.mergeKnownFields(result?.third ?: WorkshopInteraction()),
+                                isLoadingInteraction = false,
+                            )
+                    }.onFailure { error ->
+                        if (error is CancellationException || requestVersion != interactionRequestVersion) return@onFailure
+                        mutableState.value = mutableState.value.copy(isLoadingInteraction = false)
+                    }
+                }
+        }
+
+        private fun updateInteraction(
+            @androidx.annotation.StringRes successMessage: Int,
+            optimisticInteraction: WorkshopInteraction,
+            expectedAccountName: String,
+            operation: suspend () -> WorkshopInteraction,
+        ) {
+            val requestVersion = ++interactionRequestVersion
+            interactionLoadJob?.cancel()
+            interactionLoadJob = null
+            val previousInteraction = mutableState.value.interaction
+            mutableState.value =
+                mutableState.value.copy(
+                    interaction = previousInteraction.mergeKnownFields(optimisticInteraction),
+                    isLoadingInteraction = false,
+                    isUpdatingInteraction = true,
+                    interactionMessage = null,
+                )
+            viewModelScope.launch {
+                runCatching {
+                    check(mutableState.value.steamSession.accountName == expectedAccountName) {
+                        "Steam account changed before submitting interaction"
+                    }
+                    operation()
+                }
+                    .onSuccess { interaction ->
+                        if (requestVersion != interactionRequestVersion) return@onSuccess
+                        val current = mutableState.value
+                        mutableState.value =
+                            current.copy(
+                                interaction = current.interaction.mergeKnownFields(interaction),
+                                isUpdatingInteraction = false,
+                                interactionMessage = DetailUiText.Resource(successMessage),
+                            )
+                    }.onFailure { error ->
+                        if (error is CancellationException) throw error
+                        if (requestVersion != interactionRequestVersion) return@onFailure
+                        mutableState.value =
+                            mutableState.value.copy(
+                                interaction = previousInteraction,
+                                isUpdatingInteraction = false,
+                                interactionMessage = error.toDetailUiText(R.string.detail_steam_request_failed),
+                            )
+                    }
+            }
+        }
+
+        override fun onCleared() {
+            stopInlineVideoPlayback()
+            super.onCleared()
+        }
+
+        private companion object {
+            const val COMMENTS_LOG_TAG = "WallHubWorkshop"
+            const val COMMENTS_PAGE_SIZE = 20
+            const val COMMENTS_LOAD_TIMEOUT_MS = 6_000L
+        }
+    }
+
+internal fun WorkshopDetailAction.immediateEffect(): WorkshopDetailEffect? =
+    when (this) {
+        is WorkshopDetailAction.RequestOperation ->
+            WorkshopDetailEffect.ResolveLegacyStoragePermission(operation)
+        WorkshopDetailAction.Back -> WorkshopDetailEffect.Back
+        is WorkshopDetailAction.SearchAuthor -> WorkshopDetailEffect.SearchAuthor(author)
+        is WorkshopDetailAction.CopyText -> WorkshopDetailEffect.CopyText(text, message)
+        is WorkshopDetailAction.OpenSteam -> WorkshopDetailEffect.OpenSteam(workshopId)
+        is WorkshopDetailAction.ShowMessage -> WorkshopDetailEffect.ShowMessage(message)
+        is WorkshopDetailAction.LegacyStoragePermissionResult -> null
+    }

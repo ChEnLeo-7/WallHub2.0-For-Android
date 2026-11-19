@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <activity
+            android:name="com.wallhub.android.feature.detail.MpkgSheetTestActivity"
+            android:exported="false" />
+        <activity
+            android:name="com.wallhub.android.testhost.WallHubTestActivity"
+            android:exported="false" />
+        <activity
+            android:name="com.wallhub.android.testhost.FullscreenWindowTestActivity"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden"
+            android:exported="false" />
+        <receiver
+            android:name="com.wallhub.android.app.DebugVideoCommandReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.wallhub.android.debug.SEEK_VIDEO" />
+            </intent-filter>
+        </receiver>
+    </application>
+</manifest>

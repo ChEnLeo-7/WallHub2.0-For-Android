@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <item name="wallhub_hold_speed_controller" type="id" />
+    <item name="wallhub_native_media_host" type="id" />
+</resources>

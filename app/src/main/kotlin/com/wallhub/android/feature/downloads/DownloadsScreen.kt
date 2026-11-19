@@ -1,0 +1,1594 @@
+@file:Suppress("ktlint:standard:function-naming")
+
+package com.wallhub.android.feature.downloads
+
+import android.Manifest
+import android.content.Context
+import android.widget.Toast
+import com.wallhub.android.core.model.MpkgConversionPreset
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.annotation.StringRes
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.gestures.scrollBy
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Button
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.PrimaryTabRow
+import androidx.compose.material3.Tab
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalResources
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
+import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.SavedStateHandle
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewModelScope
+import coil.compose.AsyncImage
+import com.wallhub.android.R
+import com.wallhub.android.core.designsystem.MpkgConversionOptions
+import com.wallhub.android.core.designsystem.WallHubEmptyState
+import com.wallhub.android.core.designsystem.WallHubShapeTokens
+import com.wallhub.android.core.designsystem.WallHubDividerVariant
+import com.wallhub.android.core.designsystem.WallHubHorizontalDivider
+import com.wallhub.android.core.designsystem.label
+import com.wallhub.android.core.designsystem.WallHubPageScaffold
+import com.wallhub.android.core.designsystem.WallHubSizeTokens
+import com.wallhub.android.core.designsystem.WallHubSpacing
+import com.wallhub.android.core.designsystem.LocalWallHubOverlayBottomClearance
+import com.wallhub.android.core.designsystem.WallHubModalBottomSheet
+import com.wallhub.android.core.designsystem.wallHubStyle
+import com.wallhub.android.core.designsystem.FilterableWorkshopTypes
+import com.wallhub.android.core.designsystem.WorkshopTypeFilterMenu
+import com.wallhub.android.core.format.formatByteSize
+import com.wallhub.android.core.designsystem.localizedTitle
+import com.wallhub.android.core.designsystem.requiresLegacyPublicDownloadPermission
+import com.wallhub.android.core.model.DownloadAction
+import com.wallhub.android.core.model.DownloadEnqueueResult
+import com.wallhub.android.core.model.DownloadLiveActivity
+import com.wallhub.android.core.model.DownloadStatus
+import com.wallhub.android.core.model.DownloadTask
+import com.wallhub.android.core.model.WorkshopDownloads
+import com.wallhub.android.core.model.ExportFormat
+import com.wallhub.android.core.model.SettingsRepository
+import com.wallhub.android.core.model.WorkshopSummary
+import com.wallhub.android.core.model.WorkshopType
+import com.wallhub.android.core.model.toQuickDownloadRequest
+import com.wallhub.android.data.downloads.DownloadTimingContext
+import com.wallhub.android.data.downloads.DownloadTimingTelemetry
+import com.wallhub.android.data.downloads.hasCompleteStagingDownload
+import com.wallhub.android.data.downloads.hasIntactStagingFiles
+import com.wallhub.prototype.mpkg.ConversionReportJsonCodec
+import com.wallhub.prototype.mpkg.PersistedConversionReport
+import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.receiveAsFlow
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
+import org.json.JSONObject
+import org.uwuaosp.compose.settingslib.SettingsToolbarActionButton
+import javax.inject.Inject
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Cancel
+import androidx.compose.material.icons.outlined.DeleteSweep
+import androidx.compose.material.icons.outlined.Download
+import androidx.compose.material.icons.outlined.FileUpload
+import androidx.compose.material.icons.outlined.ImageNotSupported
+import androidx.compose.material.icons.outlined.Pause
+import androidx.compose.material.icons.outlined.PlayArrow
+import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material.icons.outlined.Settings
+
+enum class DownloadFilter {
+    ALL,
+    COMPLETED,
+    DOWNLOADING,
+    QUEUED,
+    FAILED,
+}
+
+data class DownloadsUiState(
+    val filter: DownloadFilter = DownloadFilter.ALL,
+    val selectedTypes: Set<WorkshopType> = FilterableWorkshopTypes,
+    val allTasks: List<DownloadTask> = emptyList(),
+    val tasks: List<DownloadTask> = emptyList(),
+)
+
+sealed interface DownloadsAction {
+    data class SelectFilter(
+        val filter: DownloadFilter,
+    ) : DownloadsAction
+
+    data class ToggleTypeFilter(
+        val type: WorkshopType,
+    ) : DownloadsAction
+
+    data class SetTypeFilters(
+        val types: Set<WorkshopType>,
+    ) : DownloadsAction
+
+    data class RequestTaskAction(
+        val taskId: String,
+        val action: DownloadAction,
+    ) : DownloadsAction
+
+    data class RequestReconversion(
+        val taskId: String,
+        val preset: MpkgConversionPreset,
+        val preserveAudio: Boolean,
+    ) : DownloadsAction
+
+    data class ReorderTasks(
+        val taskIds: List<String>,
+    ) : DownloadsAction
+
+    data object ClearFinishedHistory : DownloadsAction
+
+    data object ClearCompletedHistory : DownloadsAction
+
+    data object RetryFailedTasks : DownloadsAction
+
+    data class EnqueueWorkshop(
+        val item: WorkshopSummary,
+    ) : DownloadsAction
+
+    data class PlayVideo(
+        val taskId: String,
+    ) : DownloadsAction
+
+    data class LegacyStoragePermissionResult(
+        val operation: DownloadsPendingOperation,
+        val granted: Boolean,
+    ) : DownloadsAction
+}
+
+sealed interface DownloadsPendingOperation {
+    data class TaskAction(
+        val taskId: String,
+        val action: DownloadAction,
+    ) : DownloadsPendingOperation
+
+    data class Reconversion(
+        val taskId: String,
+        val preset: MpkgConversionPreset,
+        val preserveAudio: Boolean,
+    ) : DownloadsPendingOperation
+
+    data class EnqueueWorkshop(
+        val item: WorkshopSummary,
+    ) : DownloadsPendingOperation
+
+    data object RetryFailedTasks : DownloadsPendingOperation
+}
+
+sealed interface DownloadsEffect {
+    data class ResolveLegacyStoragePermission(
+        val operation: DownloadsPendingOperation,
+    ) : DownloadsEffect
+
+    data class ShowMessage(
+        @StringRes val messageRes: Int,
+        val formatArgs: List<Any> = emptyList(),
+    ) : DownloadsEffect
+
+    data class PlayVideo(
+        val taskId: String,
+    ) : DownloadsEffect
+}
+
+@HiltViewModel
+class DownloadsViewModel
+    @Inject
+    constructor(
+        @ApplicationContext private val applicationContext: Context,
+        private val workshopDownloads: WorkshopDownloads,
+        private val settingsRepository: SettingsRepository,
+        savedStateHandle: SavedStateHandle = SavedStateHandle(),
+    ) : ViewModel() {
+        private val stateSource = DownloadsStateSource(workshopDownloads, savedStateHandle)
+        private val effectChannel = Channel<DownloadsEffect>(capacity = Channel.BUFFERED)
+
+        val uiState: StateFlow<DownloadsUiState> =
+            stateSource.states.stateIn(
+                scope = viewModelScope,
+                started = SharingStarted.WhileSubscribed(5_000),
+                initialValue = DownloadsUiState(),
+            )
+        val effects: Flow<DownloadsEffect> = effectChannel.receiveAsFlow()
+
+        fun onAction(action: DownloadsAction) {
+            when (action) {
+                is DownloadsAction.SelectFilter -> stateSource.setFilter(action.filter)
+                is DownloadsAction.ToggleTypeFilter -> stateSource.toggleTypeFilter(action.type)
+                is DownloadsAction.SetTypeFilters -> stateSource.setTypeFilters(action.types)
+                is DownloadsAction.RequestTaskAction -> prepareTaskAction(action.taskId, action.action)
+                is DownloadsAction.RequestReconversion ->
+                    emitEffect(
+                        DownloadsEffect.ResolveLegacyStoragePermission(
+                            DownloadsPendingOperation.Reconversion(
+                                action.taskId,
+                                action.preset,
+                                action.preserveAudio,
+                            ),
+                        ),
+                    )
+                is DownloadsAction.ReorderTasks ->
+                    viewModelScope.launch {
+                        workshopDownloads.reorder(action.taskIds)
+                    }
+                DownloadsAction.ClearFinishedHistory ->
+                    viewModelScope.launch {
+                        val count = workshopDownloads.clearFinishedHistory()
+                        effectChannel.send(
+                            DownloadsEffect.ShowMessage(
+                                R.string.downloads_finished_cleared,
+                                listOf(count),
+                            ),
+                        )
+                    }
+                DownloadsAction.ClearCompletedHistory ->
+                    viewModelScope.launch {
+                        val count = workshopDownloads.clearCompletedHistory()
+                        effectChannel.send(
+                            DownloadsEffect.ShowMessage(
+                                R.string.downloads_completed_cleared,
+                                listOf(count),
+                            ),
+                        )
+                    }
+                DownloadsAction.RetryFailedTasks ->
+                    emitEffect(
+                        DownloadsEffect.ResolveLegacyStoragePermission(
+                            DownloadsPendingOperation.RetryFailedTasks,
+                        ),
+                    )
+                is DownloadsAction.EnqueueWorkshop ->
+                    emitEffect(
+                        DownloadsEffect.ResolveLegacyStoragePermission(
+                            DownloadsPendingOperation.EnqueueWorkshop(action.item),
+                        ),
+                    )
+                is DownloadsAction.PlayVideo -> emitEffect(DownloadsEffect.PlayVideo(action.taskId))
+                is DownloadsAction.LegacyStoragePermissionResult -> {
+                    if (action.granted) {
+                        executePendingOperation(action.operation)
+                    } else {
+                        emitEffect(
+                            DownloadsEffect.ShowMessage(
+                                R.string.downloads_storage_permission_denied,
+                            ),
+                        )
+                    }
+                }
+            }
+        }
+
+        private fun prepareTaskAction(
+            taskId: String,
+            action: DownloadAction,
+        ) {
+            viewModelScope.launch {
+                val task = workshopDownloads.find(taskId)
+                val requiresPermission =
+                    action == DownloadAction.EXPORT ||
+                        (action == DownloadAction.RETRY && !task?.stagingDirectory.isNullOrBlank())
+                val operation = DownloadsPendingOperation.TaskAction(taskId, action)
+                if (requiresPermission) {
+                    effectChannel.send(DownloadsEffect.ResolveLegacyStoragePermission(operation))
+                } else {
+                    executeTaskAction(taskId, action)
+                }
+            }
+        }
+
+        private fun executePendingOperation(operation: DownloadsPendingOperation) {
+            when (operation) {
+                is DownloadsPendingOperation.TaskAction ->
+                    executeTaskAction(
+                        operation.taskId,
+                        operation.action,
+                    )
+                is DownloadsPendingOperation.Reconversion ->
+                    requestReconversion(operation.taskId, operation.preset, operation.preserveAudio)
+                is DownloadsPendingOperation.EnqueueWorkshop -> enqueueWorkshop(operation.item)
+                DownloadsPendingOperation.RetryFailedTasks -> retryFailedTasks()
+            }
+        }
+
+        private fun requestReconversion(
+            taskId: String,
+            preset: MpkgConversionPreset,
+            preserveAudio: Boolean,
+        ) {
+            viewModelScope.launch {
+                runCatching { workshopDownloads.requestReconversion(taskId, preset, preserveAudio) }
+                    .onFailure {
+                        effectChannel.send(DownloadsEffect.ShowMessage(R.string.downloads_action_failed))
+                    }
+            }
+        }
+
+        private fun retryFailedTasks() {
+            viewModelScope.launch {
+                val count = workshopDownloads.retryFailedTasks()
+                effectChannel.send(
+                    DownloadsEffect.ShowMessage(
+                        R.string.downloads_failed_retried,
+                        listOf(count),
+                    ),
+                )
+            }
+        }
+
+        private fun executeTaskAction(
+            taskId: String,
+            action: DownloadAction,
+        ) {
+            viewModelScope.launch {
+                runCatching {
+                    val task = workshopDownloads.find(taskId)
+                    if (action == DownloadAction.EXPORT && task?.status == DownloadStatus.FAILED) {
+                        workshopDownloads.requestExport(taskId, ExportFormat.ZIP)
+                    } else {
+                        workshopDownloads.requestAction(taskId, action)
+                    }
+                }.onSuccess {
+                        if (action == DownloadAction.EXPORT) {
+                            effectChannel.send(
+                                DownloadsEffect.ShowMessage(R.string.downloads_export_queued),
+                            )
+                        }
+                    }.onFailure {
+                        effectChannel.send(
+                            DownloadsEffect.ShowMessage(R.string.downloads_action_failed),
+                        )
+                    }
+            }
+        }
+
+        private fun enqueueWorkshop(item: WorkshopSummary) {
+            viewModelScope.launch {
+                runCatching {
+                    val preferences = settingsRepository.preferences.first()
+                    workshopDownloads.enqueue(
+                        item.toQuickDownloadRequest(
+                            preferences = preferences,
+                            localizedTitle = applicationContext.localizedTitle(item),
+                        ),
+                    )
+                }.onSuccess { result ->
+                    effectChannel.send(
+                        DownloadsEffect.ShowMessage(
+                            if (result is DownloadEnqueueResult.Created) {
+                                R.string.downloads_added_to_queue
+                            } else {
+                                R.string.download_already_active
+                            },
+                            listOf(result.task.title),
+                        ),
+                    )
+                }.onFailure {
+                    effectChannel.send(
+                        DownloadsEffect.ShowMessage(R.string.downloads_enqueue_failed),
+                    )
+                }
+            }
+        }
+
+        private fun emitEffect(effect: DownloadsEffect) {
+            effectChannel.trySend(effect)
+        }
+    }
+
+internal class DownloadsStateSource(
+    private val workshopDownloads: WorkshopDownloads,
+    private val savedStateHandle: SavedStateHandle = SavedStateHandle(),
+) {
+    private val selectedFilter =
+        MutableStateFlow(downloadEnumValueOrDefault(savedStateHandle[DOWNLOAD_FILTER_KEY], DownloadFilter.ALL))
+    private val selectedTypes = MutableStateFlow(savedStateHandle.downloadSelectedTypes())
+
+    val states =
+        combine(
+            workshopDownloads.tasks,
+            selectedFilter,
+            selectedTypes,
+        ) { tasks, filter, types ->
+            DownloadsUiState(
+                filter = filter,
+                selectedTypes = types,
+                allTasks = tasks,
+                tasks = filterTasks(tasks, filter, types),
+            )
+        }
+
+    fun setFilter(filter: DownloadFilter) {
+        selectedFilter.value = filter
+        savedStateHandle[DOWNLOAD_FILTER_KEY] = filter.name
+    }
+
+    fun toggleTypeFilter(type: WorkshopType) {
+        setTypeFilters(
+            selectedTypes.value.toMutableSet().apply {
+                if (!add(type)) remove(type)
+            },
+        )
+    }
+
+    fun setTypeFilters(types: Set<WorkshopType>) {
+        selectedTypes.value = types.intersect(FilterableWorkshopTypes)
+        savedStateHandle[DOWNLOAD_TYPE_FILTER_KEY] = ArrayList(selectedTypes.value.map(WorkshopType::name))
+    }
+}
+
+private fun SavedStateHandle.downloadSelectedTypes(): Set<WorkshopType> =
+    when (val saved = get<Any>(DOWNLOAD_TYPE_FILTER_KEY)) {
+        is ArrayList<*> ->
+            saved.mapNotNullTo(linkedSetOf()) { name ->
+                WorkshopType.entries.firstOrNull { it.name == name }
+            }
+        "VIDEO" -> setOf(WorkshopType.VIDEO)
+        "SCENE" -> setOf(WorkshopType.SCENE)
+        "WEB" -> setOf(WorkshopType.WEB)
+        else -> FilterableWorkshopTypes
+    }
+
+private inline fun <reified T : Enum<T>> downloadEnumValueOrDefault(
+    value: String?,
+    default: T,
+): T = value?.let { name -> enumValues<T>().firstOrNull { it.name == name } } ?: default
+
+private const val DOWNLOAD_FILTER_KEY = "downloads.filter"
+private const val DOWNLOAD_TYPE_FILTER_KEY = "downloads.typeFilter"
+
+@Composable
+fun DownloadsRoute(
+    onOpenSettings: () -> Unit = {},
+    onBack: () -> Unit = {},
+    onPlayVideo: (String) -> Unit = {},
+    onOpenDetail: (Long) -> Unit = {},
+    onBrowse: () -> Unit = {},
+    viewModel: DownloadsViewModel = hiltViewModel(),
+) {
+    val state by viewModel.uiState.collectAsStateWithLifecycle()
+    DownloadsEffectHandler(
+        viewModel = viewModel,
+        onPlayVideo = onPlayVideo,
+    )
+    DownloadsScreen(
+        state = state,
+        onAction = viewModel::onAction,
+        onBack = onBack,
+        onOpenSettings = onOpenSettings,
+        onOpenDetail = onOpenDetail,
+        onBrowse = onBrowse,
+    )
+}
+
+@Composable
+fun DownloadsEffectHandler(
+    viewModel: DownloadsViewModel,
+    onPlayVideo: (String) -> Unit = {},
+) {
+    val context = LocalContext.current
+    val resources = LocalResources.current
+    val currentOnPlayVideo by rememberUpdatedState(onPlayVideo)
+    var pendingOperation by remember { mutableStateOf<DownloadsPendingOperation?>(null) }
+    val legacyStoragePermissionLauncher =
+        rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.RequestPermission(),
+        ) { granted ->
+            pendingOperation?.let { operation ->
+                viewModel.onAction(
+                    DownloadsAction.LegacyStoragePermissionResult(operation, granted),
+                )
+            }
+            pendingOperation = null
+        }
+    LaunchedEffect(viewModel, context, resources) {
+        viewModel.effects.collect { effect ->
+            when (effect) {
+                is DownloadsEffect.ResolveLegacyStoragePermission -> {
+                    if (context.requiresLegacyPublicDownloadPermission()) {
+                        pendingOperation = effect.operation
+                        legacyStoragePermissionLauncher.launch(
+                            Manifest.permission.WRITE_EXTERNAL_STORAGE,
+                        )
+                    } else {
+                        viewModel.onAction(
+                            DownloadsAction.LegacyStoragePermissionResult(
+                                effect.operation,
+                                granted = true,
+                            ),
+                        )
+                    }
+                }
+                is DownloadsEffect.ShowMessage ->
+                    Toast.makeText(
+                        context.applicationContext,
+                        resources.getString(effect.messageRes, *effect.formatArgs.toTypedArray()),
+                        Toast.LENGTH_SHORT,
+                    ).show()
+                is DownloadsEffect.PlayVideo -> currentOnPlayVideo(effect.taskId)
+            }
+        }
+    }
+}
+
+internal fun selectBulkDownloadAction(tasks: List<DownloadTask>): DownloadAction? =
+    when {
+        tasks.any { it.pendingControl == DownloadAction.PAUSE || it.pendingControl == DownloadAction.RESUME } -> null
+        tasks.any { DownloadAction.PAUSE in it.availableActions } -> DownloadAction.PAUSE
+        tasks.any { DownloadAction.RESUME in it.availableActions } -> DownloadAction.RESUME
+        else -> null
+    }
+
+@Composable
+fun DownloadsScreen(
+    state: DownloadsUiState,
+    onAction: (DownloadsAction) -> Unit,
+    onOpenSettings: () -> Unit = {},
+    onBack: () -> Unit = {},
+    onOpenDetail: (Long) -> Unit = {},
+    onBrowse: () -> Unit = {},
+    initialWideView: Boolean = false,
+    initialFabExpanded: Boolean = false,
+) {
+    val style = wallHubStyle()
+    val bettbox = style.capabilities.bettboxSurfaces
+    var viewMode by rememberSaveable {
+        mutableStateOf(if (initialWideView) DownloadViewMode.WIDE else DownloadViewMode.SQUARE)
+    }
+    var fabExpanded by rememberSaveable { mutableStateOf(initialFabExpanded) }
+    var filterMenuExpanded by rememberSaveable { mutableStateOf(false) }
+    var clearConfirmation by remember { mutableStateOf(false) }
+    val completedTab = state.filter == DownloadFilter.COMPLETED
+    val tasks = filterTasks(state.allTasks, state.filter, state.selectedTypes)
+    val globalAction = selectBulkDownloadAction(state.allTasks)
+    val resumeAll = globalAction == DownloadAction.RESUME
+
+    WallHubPageScaffold(
+        title = stringResource(R.string.downloads_title),
+        showBackButton = true,
+        onNavigateUp = onBack,
+        actions = {
+            if (bettbox) {
+                BettboxDownloadViewModeToggle(
+                    viewMode = viewMode,
+                    onClick = {
+                        viewMode =
+                            if (viewMode == DownloadViewMode.SQUARE) {
+                                DownloadViewMode.WIDE
+                            } else {
+                                DownloadViewMode.SQUARE
+                            }
+                    },
+                )
+            } else {
+                WorkshopTypeFilterMenu(
+                    selectedTypes = state.selectedTypes,
+                    onTypeToggled = { onAction(DownloadsAction.ToggleTypeFilter(it)) },
+                    contentDescription = stringResource(R.string.downloads_type_filter),
+                    typeLabel = WorkshopType::downloadTypeLabel,
+                )
+                IconButton(
+                    onClick = { onAction(DownloadsAction.RetryFailedTasks) },
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.Refresh,
+                        contentDescription = stringResource(R.string.downloads_retry_failed),
+                    )
+                }
+                IconButton(
+                    onClick = { onAction(DownloadsAction.ClearFinishedHistory) },
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.DeleteSweep,
+                        contentDescription = stringResource(R.string.downloads_clear_finished),
+                    )
+                }
+            }
+        },
+    ) { padding ->
+        Box(modifier = Modifier.fillMaxSize().padding(padding)) {
+            if (bettbox) {
+                Column(modifier = Modifier.fillMaxSize()) {
+                    BettboxDownloadTabs(
+                        selectedTab = if (completedTab) 1 else 0,
+                        onSelected = { index ->
+                            onAction(
+                                DownloadsAction.SelectFilter(
+                                    if (index == 1) DownloadFilter.COMPLETED else DownloadFilter.DOWNLOADING,
+                                ),
+                            )
+                        },
+                    )
+                    AnimatedContent(
+                        targetState = tasks.isEmpty(),
+                        modifier = Modifier.weight(1f),
+                        transitionSpec = { fadeIn(tween(180)) togetherWith fadeOut(tween(120)) },
+                        label = "BettboxDownloadsContent",
+                    ) { showEmptyState ->
+                        if (showEmptyState) {
+                            WallHubEmptyState(
+                                icon = Icons.Outlined.Download,
+                                title = stringResource(R.string.downloads_empty),
+                                actionLabel = stringResource(R.string.downloads_empty_browse),
+                                onAction = onBrowse,
+                                modifier = Modifier.fillMaxSize(),
+                            )
+                        } else {
+                            BettboxDownloadList(
+                                tasks = tasks,
+                                viewMode = viewMode,
+                                onDownloadsAction = onAction,
+                                onOpenDetail = onOpenDetail,
+                                onPlayVideo = { taskId -> onAction(DownloadsAction.PlayVideo(taskId)) },
+                                modifier = Modifier.widthIn(max = WallHubSizeTokens.readableContentMaxWidth).fillMaxWidth().align(Alignment.CenterHorizontally),
+                            )
+                        }
+                    }
+                }
+            } else {
+                DownloadsContent(
+                    state = state,
+                    onAction = onAction,
+                    showFilters = true,
+                    onOpenDetail = onOpenDetail,
+                    modifier =
+                        Modifier
+                            .fillMaxSize()
+                            .widthIn(max = WallHubSizeTokens.readableContentMaxWidth)
+                            .align(Alignment.TopCenter),
+                )
+            }
+            if (bettbox) {
+                BettboxDownloadFab(
+                    expanded = fabExpanded,
+                    onExpandedChange = { fabExpanded = it },
+                    globalLabel =
+                        globalAction?.let {
+                            stringResource(if (resumeAll) R.string.downloads_resume_all else R.string.downloads_pause_all)
+                        },
+                    isResume = resumeAll,
+                    filterLabel = stringResource(R.string.downloads_type_filter),
+                    retryLabel = stringResource(R.string.downloads_retry_failed),
+                    clearLabel = stringResource(R.string.downloads_clear_completed),
+                    onGlobalAction = {
+                        globalAction?.let { action ->
+                            state.allTasks
+                                .filter { task -> action in task.availableActions }
+                                .forEach { task -> onAction(DownloadsAction.RequestTaskAction(task.id, action)) }
+                        }
+                        fabExpanded = false
+                    },
+                    onFilter = {
+                        fabExpanded = false
+                        filterMenuExpanded = true
+                    },
+                    onRetry = {
+                        onAction(DownloadsAction.RetryFailedTasks)
+                        fabExpanded = false
+                    },
+                    onClear = {
+                        clearConfirmation = true
+                        fabExpanded = false
+                    },
+                    failedCount = state.allTasks.count { it.status == DownloadStatus.FAILED },
+                    completedCount = state.allTasks.count { it.status == DownloadStatus.COMPLETED },
+                    modifier = Modifier.align(Alignment.BottomEnd).padding(end = WallHubSpacing.content, bottom = LocalWallHubOverlayBottomClearance.current + WallHubSpacing.xs),
+                    filterMenuExpanded = filterMenuExpanded,
+                    onFilterMenuDismiss = { filterMenuExpanded = false },
+                    selectedTypes = state.selectedTypes,
+                    onSelectTypes = { types ->
+                        onAction(DownloadsAction.SetTypeFilters(types))
+                        filterMenuExpanded = false
+                        fabExpanded = false
+                    },
+                )
+            }
+        }
+    }
+
+    if (bettbox && clearConfirmation) {
+        DownloadsClearConfirmationDialog(
+            onConfirm = {
+                onAction(DownloadsAction.ClearCompletedHistory)
+                clearConfirmation = false
+            },
+            onDismiss = { clearConfirmation = false },
+        )
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+fun DownloadsContent(
+    state: DownloadsUiState,
+    onAction: (DownloadsAction) -> Unit,
+    showFilters: Boolean,
+    onOpenDetail: (Long) -> Unit = {},
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier.fillMaxSize(),
+    ) {
+        if (showFilters) {
+            val selectedTab = if (state.filter == DownloadFilter.COMPLETED) 1 else 0
+            val pagerState = rememberPagerState(initialPage = selectedTab) { 2 }
+            LaunchedEffect(selectedTab) { if (pagerState.currentPage != selectedTab) pagerState.animateScrollToPage(selectedTab) }
+            LaunchedEffect(pagerState) {
+                snapshotFlow { pagerState.currentPage }.collect { page ->
+                    onAction(DownloadsAction.SelectFilter(if (page == 1) DownloadFilter.COMPLETED else DownloadFilter.DOWNLOADING))
+                }
+            }
+            PrimaryTabRow(
+                selectedTabIndex = pagerState.currentPage,
+                modifier = Modifier.fillMaxWidth(),
+                containerColor = Color.Transparent,
+                contentColor = MaterialTheme.colorScheme.onSurface,
+            ) {
+                Tab(
+                    selected = pagerState.currentPage == 0,
+                    onClick = { onAction(DownloadsAction.SelectFilter(DownloadFilter.DOWNLOADING)) },
+                    text = { Text(stringResource(R.string.downloads_tab_active)) },
+                )
+                Tab(
+                    selected = pagerState.currentPage == 1,
+                    onClick = { onAction(DownloadsAction.SelectFilter(DownloadFilter.COMPLETED)) },
+                    text = { Text(stringResource(R.string.downloads_tab_completed)) },
+                )
+            }
+            HorizontalPager(state = pagerState, modifier = Modifier.weight(1f)) { page ->
+                val pageFilter = if (page == 1) DownloadFilter.COMPLETED else DownloadFilter.DOWNLOADING
+                val pageTasks = filterTasks(state.allTasks, pageFilter, state.selectedTypes)
+                AnimatedContent(
+                    targetState = pageTasks.isEmpty(),
+                    modifier = Modifier.fillMaxSize(),
+                    transitionSpec = { fadeIn(tween(180)) togetherWith fadeOut(tween(120)) },
+                    label = "DownloadsPageContent",
+                ) { showEmptyState ->
+                    if (showEmptyState) {
+                        WallHubEmptyState(icon = Icons.Outlined.Download, title = stringResource(R.string.downloads_empty), modifier = Modifier.fillMaxSize())
+                    } else {
+                        ReorderableDownloadList(
+                            tasks = pageTasks,
+                            onAction = { taskId, action -> onAction(DownloadsAction.RequestTaskAction(taskId, action)) },
+                            onReconvert = { taskId, preset, preserveAudio ->
+                                onAction(DownloadsAction.RequestReconversion(taskId, preset, preserveAudio))
+                            },
+                            onPlayVideo = { taskId -> onAction(DownloadsAction.PlayVideo(taskId)) },
+                            onOpenDetail = onOpenDetail,
+                            onReorder = { taskIds -> onAction(DownloadsAction.ReorderTasks(taskIds)) },
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    }
+                }
+            }
+        } else if (state.tasks.isEmpty()) {
+            WallHubEmptyState(
+                icon = Icons.Outlined.Download,
+                title = stringResource(R.string.downloads_empty),
+                modifier = Modifier.weight(1f),
+            )
+        } else {
+            ReorderableDownloadList(
+                tasks = state.tasks,
+                onAction = { taskId, action ->
+                    onAction(DownloadsAction.RequestTaskAction(taskId, action))
+                },
+                onReconvert = { taskId, preset, preserveAudio ->
+                    onAction(DownloadsAction.RequestReconversion(taskId, preset, preserveAudio))
+                },
+                onPlayVideo = { taskId -> onAction(DownloadsAction.PlayVideo(taskId)) },
+                onOpenDetail = onOpenDetail,
+                onReorder = { taskIds -> onAction(DownloadsAction.ReorderTasks(taskIds)) },
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
+    }
+}
+
+@Composable
+private fun ReorderableDownloadList(
+    tasks: List<DownloadTask>,
+    onAction: (String, DownloadAction) -> Unit,
+    onReconvert: (String, MpkgConversionPreset, Boolean) -> Unit,
+    onPlayVideo: (String) -> Unit,
+    onOpenDetail: (Long) -> Unit,
+    onReorder: (List<String>) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val taskIds = tasks.map(DownloadTask::id)
+    val tasksById = tasks.associateBy(DownloadTask::id)
+    var orderedIds by remember { mutableStateOf(taskIds) }
+    var draggedTaskId by remember { mutableStateOf<String?>(null) }
+    var dragOffsetPx by remember { mutableFloatStateOf(0f) }
+    val listState = rememberLazyListState()
+    val coroutineScope = rememberCoroutineScope()
+    val haptics = LocalHapticFeedback.current
+    val itemSpacingPx = with(LocalDensity.current) { DOWNLOAD_CARD_SPACING.toPx() }
+    LaunchedEffect(taskIds, draggedTaskId) {
+        if (draggedTaskId == null) orderedIds = taskIds
+    }
+    val visibleIds = orderedIds.filter(tasksById::containsKey) + taskIds.filterNot(orderedIds::contains)
+
+    LazyColumn(
+        state = listState,
+        modifier = modifier,
+        contentPadding =
+            androidx.compose.foundation.layout.PaddingValues(
+                start = WallHubSpacing.md,
+                top = WallHubSpacing.xs,
+                end = WallHubSpacing.md,
+                bottom = LocalWallHubOverlayBottomClearance.current,
+            ),
+        verticalArrangement = Arrangement.spacedBy(DOWNLOAD_CARD_SPACING),
+    ) {
+        items(items = visibleIds, key = { taskId -> taskId }) { taskId ->
+            val task = tasksById.getValue(taskId)
+            val isDragging = draggedTaskId == taskId
+            val canReorder = task.status in REORDERABLE_DOWNLOAD_STATUSES
+            val dragModifier =
+                Modifier
+                    .then(if (isDragging) Modifier else Modifier.animateItem())
+                    .zIndex(if (isDragging) 1f else 0f)
+                    .graphicsLayer {
+                        if (isDragging) {
+                            translationY = dragOffsetPx
+                            scaleX = DOWNLOAD_DRAG_SCALE
+                            scaleY = DOWNLOAD_DRAG_SCALE
+                            shadowElevation = DOWNLOAD_DRAG_ELEVATION.toPx()
+                        }
+                    }.pointerInput(taskId, canReorder) {
+                        if (!canReorder) return@pointerInput
+                        detectDragGesturesAfterLongPress(
+                            onDragStart = {
+                                draggedTaskId = taskId
+                                dragOffsetPx = 0f
+                                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                            },
+                            onDragCancel = {
+                                draggedTaskId = null
+                                dragOffsetPx = 0f
+                            },
+                            onDragEnd = {
+                                draggedTaskId = null
+                                dragOffsetPx = 0f
+                                onReorder(orderedIds)
+                            },
+                            onDrag = { change, dragAmount ->
+                                change.consume()
+                                dragOffsetPx += dragAmount.y
+                                val itemInfo =
+                                    listState.layoutInfo.visibleItemsInfo
+                                        .firstOrNull { item -> item.key == taskId }
+                                val itemExtentPx =
+                                    itemInfo?.size?.toFloat()?.plus(itemSpacingPx) ?: 0f
+                                var currentIndex = orderedIds.indexOf(taskId)
+                                while (
+                                    itemExtentPx > 0f &&
+                                        dragOffsetPx > itemExtentPx / 2f &&
+                                        currentIndex < orderedIds.lastIndex
+                                ) {
+                                    val next = currentIndex + 1
+                                    orderedIds =
+                                        orderedIds.toMutableList().apply {
+                                            this[currentIndex] = this[next]
+                                            this[next] = taskId
+                                        }
+                                    dragOffsetPx -= itemExtentPx
+                                    currentIndex = next
+                                }
+                                while (
+                                    itemExtentPx > 0f &&
+                                        dragOffsetPx < -itemExtentPx / 2f &&
+                                        currentIndex > 0
+                                ) {
+                                    val previous = currentIndex - 1
+                                    orderedIds =
+                                        orderedIds.toMutableList().apply {
+                                            this[currentIndex] = this[previous]
+                                            this[previous] = taskId
+                                        }
+                                    dragOffsetPx += itemExtentPx
+                                    currentIndex = previous
+                                }
+                                if (itemInfo != null) {
+                                    val translatedTop = itemInfo.offset + dragOffsetPx
+                                    val translatedBottom = translatedTop + itemInfo.size
+                                    val viewportStart = listState.layoutInfo.viewportStartOffset + DOWNLOAD_AUTO_SCROLL_EDGE_PX
+                                    val viewportEnd = listState.layoutInfo.viewportEndOffset - DOWNLOAD_AUTO_SCROLL_EDGE_PX
+                                    val scrollDelta =
+                                        when {
+                                            translatedTop < viewportStart -> -DOWNLOAD_AUTO_SCROLL_STEP_PX
+                                            translatedBottom > viewportEnd -> DOWNLOAD_AUTO_SCROLL_STEP_PX
+                                            else -> 0f
+                                        }
+                                    if (scrollDelta != 0f) {
+                                        coroutineScope.launch { listState.scrollBy(scrollDelta) }
+                                    }
+                                }
+                            },
+                        )
+                    }
+            DownloadTaskCard(
+                task = task,
+                onAction = { action -> onAction(task.id, action) },
+                onReconvert = { preset, preserveAudio -> onReconvert(task.id, preset, preserveAudio) },
+                onPlayVideo = { onPlayVideo(task.id) },
+                onOpenDetail = { onOpenDetail(task.workshopId) },
+                modifier = dragModifier,
+            )
+        }
+    }
+}
+
+@Composable
+private fun DownloadTaskCard(
+    task: DownloadTask,
+    onAction: (DownloadAction) -> Unit,
+    onReconvert: (MpkgConversionPreset, Boolean) -> Unit,
+    onPlayVideo: () -> Unit,
+    onOpenDetail: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val hasVisibleSpeed = measuredDownloadSpeed(task) != null
+    LaunchedEffect(task.id, hasVisibleSpeed) {
+        if (hasVisibleSpeed) {
+            withFrameNanos { }
+            DownloadTimingTelemetry.logOnce(
+                event = DownloadTimingTelemetry.FIRST_NONZERO_SPEED_VISIBLE,
+                context = DownloadTimingContext(taskId = task.id, workshopId = task.workshopId),
+            )
+        }
+    }
+    val showProgress =
+        task.status in
+            setOf(
+                DownloadStatus.QUEUED,
+                DownloadStatus.RESOLVING,
+                DownloadStatus.DOWNLOADING,
+                DownloadStatus.PAUSED,
+                DownloadStatus.CONVERTING,
+                DownloadStatus.EXPORTING,
+            )
+    val statusColor =
+        when {
+            task.status == DownloadStatus.FAILED || task.status == DownloadStatus.CANCELLED ->
+                MaterialTheme.colorScheme.error
+            task.status == DownloadStatus.COMPLETED ->
+                MaterialTheme.colorScheme.onSurfaceVariant
+            else -> MaterialTheme.colorScheme.primary
+        }
+    val conversionSummary = remember(task.successfulConversionReportJson) {
+        task.successfulConversionReportJson?.let(ConversionReportJsonCodec::decodeSummary)
+    }
+    val warningReport = conversionSummary?.takeIf { it.warningTotal > 0 }
+    val failureDetail = remember(task.conversionReportJson) { task.conversionReportJson.decodeConversionFailureDetail() }
+    var showWarningDetails by remember(task.id) { mutableStateOf(false) }
+    var showFailureDetails by remember(task.id) { mutableStateOf(false) }
+    var showReconversion by remember(task.id) { mutableStateOf(false) }
+    if (showReconversion) {
+        ReconvertSheet(
+            initialPreset = task.mpkgConversionPreset,
+            initialPreserveAudio = task.preserveAudio,
+            onDismiss = { showReconversion = false },
+            onConfirm = { preset, preserveAudio ->
+                showReconversion = false
+                onReconvert(preset, preserveAudio)
+            },
+        )
+    }
+    if (showWarningDetails && warningReport != null) {
+        ConversionWarningSheet(
+            report = warningReport,
+            onDismiss = { showWarningDetails = false },
+        )
+    }
+    if (showFailureDetails && failureDetail != null) {
+        ConversionFailureSheet(
+            detail = failureDetail,
+            onDismiss = { showFailureDetails = false },
+        )
+    }
+    val cardStyle = wallHubStyle()
+    Surface(
+        modifier =
+            modifier
+                .fillMaxWidth()
+                .clip(cardStyle.shapes.card)
+                .clickable(
+                    enabled = task.status == DownloadStatus.COMPLETED || failureDetail != null,
+                    onClick = {
+                        when {
+                            failureDetail != null -> showFailureDetails = true
+                            warningReport != null -> showWarningDetails = true
+                            else -> onOpenDetail()
+                        }
+                    },
+                ),
+        shape = cardStyle.shapes.card,
+        color = cardStyle.surfaces.content,
+        tonalElevation = if (cardStyle.capabilities.bettboxSurfaces) 0.dp else DOWNLOAD_CARD_TONAL_ELEVATION,
+        shadowElevation = cardStyle.elevations.card,
+    ) {
+        Row(
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .padding(DOWNLOAD_CARD_PADDING),
+            horizontalArrangement = Arrangement.spacedBy(DOWNLOAD_CARD_GAP),
+            verticalAlignment = Alignment.Top,
+        ) {
+            Box(
+                modifier =
+                    Modifier
+                        .size(DOWNLOAD_THUMBNAIL_SIZE)
+                        .clip(WallHubShapeTokens.thumbnail)
+                        .background(cardStyle.surfaces.browseCard),
+                contentAlignment = Alignment.Center,
+            ) {
+                if (!task.previewUrl.isNullOrBlank()) {
+                    AsyncImage(
+                        model = task.previewUrl,
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                } else {
+                    Icon(
+                        imageVector = Icons.Outlined.ImageNotSupported,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(DOWNLOAD_CONTENT_VERTICAL_GAP),
+            ) {
+                Text(
+                    text = task.title,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(WallHubSpacing.xxs),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = task.projectSizeLabel(),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                if (task.shouldShowConversionPresetLabel()) {
+                    Text(
+                        text = task.mpkgConversionPreset.label(),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                conversionSummary?.let { counts ->
+                    Text(
+                        text = stringResource(
+                            R.string.downloads_conversion_report_summary,
+                            counts.convertedTextures,
+                            counts.copiedTextures,
+                            counts.rewrittenShaders,
+                            counts.removedAudio,
+                        ),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                if (warningReport != null) {
+                    Text(
+                        text = stringResource(R.string.downloads_conversion_warning_message),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                if (showProgress) {
+                    val progressBarModifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .height(PROGRESS_INDICATOR_HEIGHT)
+                    val progressBarTrack = wallHubStyle().surfaces.progressTrack
+                    val measuredProgress = downloadProgressFraction(task)
+                    if (measuredProgress != null) {
+                        val animatedProgress by animateFloatAsState(
+                            targetValue = measuredProgress,
+                            animationSpec = tween(220),
+                            label = "DownloadProgress",
+                        )
+                        LinearProgressIndicator(
+                            progress = { animatedProgress },
+                            modifier = progressBarModifier,
+                            trackColor = progressBarTrack,
+                        )
+                    } else {
+                        // No durable byte reading exists yet. The bar is drawn empty and still rather than
+                        // animating: a sweeping indeterminate bar is motion the transfer has not produced, and
+                        // the phase line beside it is what says the download is running.
+                        LinearProgressIndicator(
+                            progress = { 0f },
+                            modifier = progressBarModifier,
+                            trackColor = progressBarTrack,
+                        )
+                    }
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(WallHubSpacing.xxs),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text =
+                            warningReport?.let {
+                                stringResource(R.string.downloads_status_completed_with_warnings, it.warningTotal)
+                            } ?: task.statusDescription(),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = statusColor,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f),
+                    )
+                    if (
+                        task.type == com.wallhub.android.core.model.WorkshopType.VIDEO &&
+                            task.status == DownloadStatus.COMPLETED &&
+                            !task.stagingDirectory.isNullOrBlank()
+                    ) {
+                        DownloadCompactIconButton(
+                            icon = Icons.Outlined.PlayArrow,
+                            label = stringResource(R.string.downloads_play_video),
+                            onClick = onPlayVideo,
+                        )
+                    }
+                    if (task.canReconvert()) {
+                        DownloadCompactIconButton(
+                            icon = Icons.Outlined.Refresh,
+                            label = stringResource(R.string.downloads_action_reconvert),
+                            onClick = { showReconversion = true },
+                        )
+                    }
+                    if (task.shouldOfferRawZipExport()) {
+                        DownloadCompactIconButton(
+                            icon = Icons.Outlined.FileUpload,
+                            label = stringResource(R.string.downloads_action_export_raw_zip),
+                            onClick = { onAction(DownloadAction.EXPORT) },
+                        )
+                    }
+                    task.availableActions.forEach { action ->
+                        DownloadCompactIconButton(
+                            icon = action.icon(),
+                            label = action.label(),
+                            onClick = { onAction(action) },
+                        )
+                    }
+                }
+                val failedOrCancelled =
+                    task.status == DownloadStatus.FAILED || task.status == DownloadStatus.CANCELLED
+                if (failedOrCancelled && !task.message.isNullOrBlank()) {
+                    Text(
+                        text = task.message,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                        maxLines = 3,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+        }
+    }
+}
+
+internal fun DownloadTask.canReconvert(): Boolean =
+    status == DownloadStatus.COMPLETED && type == WorkshopType.SCENE && exportFormat != ExportFormat.ZIP
+
+internal fun DownloadTask.shouldOfferRawZipExport(): Boolean =
+    status == DownloadStatus.FAILED && hasIntactStagingFiles()
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ReconvertSheet(
+    initialPreset: MpkgConversionPreset,
+    initialPreserveAudio: Boolean,
+    onDismiss: () -> Unit,
+    onConfirm: (MpkgConversionPreset, Boolean) -> Unit,
+) {
+    var preset by remember(initialPreset) { mutableStateOf(initialPreset) }
+    var preserveAudio by remember(initialPreserveAudio) { mutableStateOf(initialPreserveAudio) }
+    WallHubModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = WallHubSpacing.md, vertical = WallHubSpacing.sm),
+            verticalArrangement = Arrangement.spacedBy(WallHubSpacing.sm),
+        ) {
+            Text(stringResource(R.string.downloads_reconversion_title), style = MaterialTheme.typography.titleLarge)
+            Text(
+                stringResource(R.string.downloads_reconversion_description),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            MpkgConversionOptions(
+                preset = preset,
+                onPresetSelected = { preset = it },
+                preserveAudio = preserveAudio,
+                onPreserveAudioChanged = { preserveAudio = it },
+            )
+            Text(
+                stringResource(R.string.downloads_reconversion_cache_note),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Button(
+                onClick = { onConfirm(preset, preserveAudio) },
+                modifier = Modifier.fillMaxWidth().height(56.dp),
+                shape = WallHubShapeTokens.cta,
+            ) {
+                Text(stringResource(R.string.downloads_reconversion_confirm))
+            }
+            TextButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.downloads_reconversion_cancel))
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ConversionWarningSheet(
+    report: PersistedConversionReport,
+    onDismiss: () -> Unit,
+) {
+    WallHubModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = WallHubSpacing.md, vertical = WallHubSpacing.sm),
+            verticalArrangement = Arrangement.spacedBy(WallHubSpacing.sm),
+        ) {
+            Text(
+                text = stringResource(R.string.downloads_conversion_warning_sheet_title, report.warningTotal),
+                style = MaterialTheme.typography.titleLarge,
+            )
+            Text(
+                text = stringResource(R.string.downloads_conversion_warning_message),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            report.warningCounts.toSortedMap().forEach { (code, count) ->
+                Text(
+                    text = stringResource(R.string.downloads_conversion_warning_count, code, count),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
+            if (report.warningDetails.isNotEmpty()) {
+                WallHubHorizontalDivider(variant = WallHubDividerVariant.Subtle)
+                Text(
+                    text = stringResource(R.string.downloads_conversion_warning_details),
+                    style = MaterialTheme.typography.titleMedium,
+                )
+                report.warningDetails.take(100).forEach { detail ->
+                    Column(verticalArrangement = Arrangement.spacedBy(WallHubSpacing.xxs)) {
+                        Text(text = detail.path, style = MaterialTheme.typography.bodyMedium)
+                        Text(
+                            text = detail.strategy?.let { "${detail.code} · $it" } ?: detail.code,
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ConversionFailureSheet(
+    detail: String,
+    onDismiss: () -> Unit,
+) {
+    val clipboard = LocalClipboardManager.current
+    WallHubModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = WallHubSpacing.md, vertical = WallHubSpacing.sm),
+            verticalArrangement = Arrangement.spacedBy(WallHubSpacing.sm),
+        ) {
+            Text(stringResource(R.string.downloads_conversion_failure_title), style = MaterialTheme.typography.titleLarge)
+            Text(
+                stringResource(R.string.downloads_conversion_failure_message),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text(detail, style = MaterialTheme.typography.bodySmall)
+            Button(
+                modifier = Modifier.fillMaxWidth(),
+                onClick = { clipboard.setText(AnnotatedString(detail)) },
+            ) {
+                Text(stringResource(R.string.downloads_conversion_failure_copy))
+            }
+        }
+    }
+}
+
+internal fun String?.decodeConversionFailureDetail(): String? =
+    this?.let { payload ->
+        runCatching {
+            JSONObject(payload)
+                .takeIf { it.optString("result") == "failed" }
+                ?.optString("detail")
+                ?.takeIf(String::isNotBlank)
+        }.getOrNull()
+    }
+
+@Composable
+private fun DownloadCompactIconButton(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    onClick: () -> Unit,
+) {
+    IconButton(
+        onClick = onClick,
+        modifier = Modifier.size(DOWNLOAD_ACTION_BUTTON_SIZE),
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = label,
+            modifier = Modifier.size(WallHubSizeTokens.smallIcon),
+        )
+    }
+}
+
+internal fun filterTasks(
+    tasks: List<DownloadTask>,
+    filter: DownloadFilter,
+    selectedTypes: Set<WorkshopType> = FilterableWorkshopTypes,
+): List<DownloadTask> =
+    tasks
+        .asSequence()
+        // The type menu only offers VIDEO, SCENE and WEB, and a workshop row whose tags the service did not
+        // report is stored as UNKNOWN. Filtering that out would leave the download running with no row to
+        // cancel, retry or delete it, so an unclassified task stays visible whatever the selection is.
+        .filter { task -> task.type in selectedTypes || task.type == WorkshopType.UNKNOWN }
+        .filter { task ->
+            when (filter) {
+                DownloadFilter.ALL -> true
+                DownloadFilter.DOWNLOADING ->
+                    // Every non-completed state stays visible here, including
+                    // FAILED and CANCELLED, so failures never silently vanish.
+                    task.status != DownloadStatus.COMPLETED
+
+                DownloadFilter.QUEUED -> task.status == DownloadStatus.QUEUED
+                DownloadFilter.COMPLETED -> task.status == DownloadStatus.COMPLETED
+                DownloadFilter.FAILED -> task.status == DownloadStatus.FAILED || task.status == DownloadStatus.CANCELLED
+            }
+        }.toList()
+
+@Composable
+private fun DownloadFilter.label(): String =
+    when (this) {
+        DownloadFilter.ALL -> stringResource(R.string.downloads_filter_all)
+        DownloadFilter.COMPLETED -> stringResource(R.string.downloads_filter_completed)
+        DownloadFilter.DOWNLOADING -> stringResource(R.string.downloads_filter_active)
+        DownloadFilter.QUEUED -> stringResource(R.string.downloads_filter_queued)
+        DownloadFilter.FAILED -> stringResource(R.string.downloads_filter_failed)
+    }
+
+@Composable
+internal fun WorkshopType.downloadTypeLabel(): String =
+    when (this) {
+        WorkshopType.VIDEO -> stringResource(R.string.downloads_type_video)
+        WorkshopType.SCENE -> stringResource(R.string.downloads_type_scene)
+        WorkshopType.WEB -> stringResource(R.string.downloads_type_web)
+        WorkshopType.UNKNOWN -> name
+    }
+
+@Composable
+internal fun DownloadStatus.label(): String =
+    when (this) {
+        DownloadStatus.QUEUED -> stringResource(R.string.downloads_status_queued)
+        DownloadStatus.RESOLVING -> stringResource(R.string.downloads_status_resolving)
+        DownloadStatus.DOWNLOADING -> stringResource(R.string.downloads_status_downloading)
+        DownloadStatus.PAUSED -> stringResource(R.string.downloads_status_paused)
+        DownloadStatus.CONVERTING -> stringResource(R.string.downloads_status_converting)
+        DownloadStatus.EXPORTING -> stringResource(R.string.downloads_status_exporting)
+        DownloadStatus.COMPLETED -> stringResource(R.string.downloads_status_completed)
+        DownloadStatus.FAILED -> stringResource(R.string.downloads_status_failed)
+        DownloadStatus.CANCELLED -> stringResource(R.string.downloads_status_cancelled)
+    }
+
+@Composable
+internal fun DownloadAction.label(): String =
+    when (this) {
+        DownloadAction.PAUSE -> stringResource(R.string.downloads_action_pause)
+        DownloadAction.RESUME -> stringResource(R.string.downloads_action_resume)
+        DownloadAction.RETRY -> stringResource(R.string.downloads_action_retry)
+        DownloadAction.EXPORT -> stringResource(R.string.downloads_action_export)
+        DownloadAction.CANCEL -> stringResource(R.string.downloads_action_cancel)
+        DownloadAction.DELETE -> stringResource(R.string.downloads_action_delete)
+    }
+
+private fun DownloadAction.icon() =
+    when (this) {
+        DownloadAction.PAUSE -> Icons.Outlined.Pause
+        DownloadAction.RESUME -> Icons.Outlined.PlayArrow
+        DownloadAction.RETRY -> Icons.Outlined.Refresh
+        DownloadAction.EXPORT -> Icons.Outlined.FileUpload
+        DownloadAction.CANCEL -> Icons.Outlined.Cancel
+        DownloadAction.DELETE -> Icons.Outlined.DeleteSweep
+    }
+
+@Composable
+private fun DownloadTask.projectSizeLabel(): String =
+    totalBytes
+        .takeIf { it > 0L }
+        ?.let(::formatByteSize)
+        ?: stringResource(R.string.downloads_reading_size)
+
+/**
+ * The fraction the card's determinate bar shows, or null when the bar has no reading to show.
+ *
+ * The determinate bar is the product's own number: durably committed bytes against the item's total. A
+ * running download whose SDK has not reported one committed byte yet has no such number, and a
+ * determinate 0% bar is what made a live transfer look frozen. Null asks for the indeterminate bar,
+ * which says work is happening without inventing a second source of truth.
+ */
+internal fun downloadProgressFraction(task: DownloadTask): Float? =
+    if (task.status == DownloadStatus.DOWNLOADING && task.downloadedBytes <= 0L) {
+        null
+    } else {
+        task.progress
+    }
+
+/**
+ * The rate the card may show, or null while no rate has been measured.
+ *
+ * Durable bytes drive the progress bar; the process-local SDK network reading alone drives this rate.
+ * Preparing, waiting and verifying never expose a historical rate, and process restart restores no rate.
+ */
+internal fun measuredDownloadSpeed(task: DownloadTask): Long? =
+    task.liveNetworkBytesPerSecond
+        ?.takeIf {
+            task.status == DownloadStatus.DOWNLOADING &&
+                task.liveActivity == DownloadLiveActivity.RECEIVING &&
+                it > 0L
+        }
+
+@Composable
+private fun DownloadTask.statusDescription(): String {
+    val phaseLabel =
+        when (liveActivity) {
+            DownloadLiveActivity.PREPARING -> stringResource(R.string.downloads_activity_preparing)
+            DownloadLiveActivity.RECEIVING -> stringResource(R.string.downloads_status_downloading)
+            DownloadLiveActivity.VERIFYING -> stringResource(R.string.downloads_activity_verifying)
+            null -> status.label()
+        }
+    return measuredDownloadSpeed(this)
+        ?.let { "$phaseLabel · ${formatByteSize(it)}/s" }
+        ?: phaseLabel
+}
+
+internal fun DownloadTask.shouldShowConversionPresetLabel(): Boolean =
+    type == WorkshopType.SCENE && exportFormat != ExportFormat.ZIP
+
+private val REORDERABLE_DOWNLOAD_STATUSES =
+    setOf(
+        DownloadStatus.QUEUED,
+        DownloadStatus.RESOLVING,
+        DownloadStatus.DOWNLOADING,
+        DownloadStatus.PAUSED,
+    )
+private val DOWNLOAD_CARD_SPACING = WallHubSpacing.xs
+private val DOWNLOAD_CARD_PADDING = WallHubSpacing.sm
+private val DOWNLOAD_CARD_GAP = WallHubSpacing.sm
+private val DOWNLOAD_CONTENT_VERTICAL_GAP = WallHubSpacing.xxs
+private val DOWNLOAD_THUMBNAIL_SIZE = 80.dp
+private val DOWNLOAD_ACTION_BUTTON_SIZE = 38.dp
+private val DOWNLOAD_CARD_TONAL_ELEVATION = 1.dp
+private val PROGRESS_INDICATOR_HEIGHT = 6.dp
+private val DOWNLOAD_DRAG_ELEVATION = WallHubSpacing.xs
+private const val DOWNLOAD_DRAG_SCALE = 1.015f
+private const val DOWNLOAD_AUTO_SCROLL_EDGE_PX = 96
+private const val DOWNLOAD_AUTO_SCROLL_STEP_PX = 24f

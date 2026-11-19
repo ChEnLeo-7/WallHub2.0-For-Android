@@ -1,0 +1,581 @@
+@file:Suppress("ktlint:standard:function-naming")
+
+package com.wallhub.settings
+
+import android.content.Context
+import android.text.format.Formatter
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.wallhub.android.R
+import com.wallhub.android.app.AppLocaleController
+import com.wallhub.android.core.model.AccentPreference
+import com.wallhub.android.core.model.AppLanguage
+import com.wallhub.android.core.model.AppPreferences
+import com.wallhub.android.core.model.AppUpdateRepository
+import com.wallhub.android.core.model.DiagnosticExportRepository
+import com.wallhub.android.core.model.HomeCardAction
+import com.wallhub.android.core.model.HomePaginationMode
+import com.wallhub.android.core.model.LauncherIconController
+import com.wallhub.android.core.model.MpkgConversionPreset
+import com.wallhub.android.core.model.SettingsRepository
+import com.wallhub.android.core.model.SteamAccessRepository
+import com.wallhub.android.core.model.SteamAccessState
+import com.wallhub.android.core.model.SteamSessionRepository
+import com.wallhub.android.core.model.SteamSessionState
+import com.wallhub.android.core.model.SteamWorkshopDataSource
+import com.wallhub.android.core.model.ThemeContrastLevel
+import com.wallhub.android.core.model.ThemePreference
+import com.wallhub.android.core.model.ThemeSchemeStyle
+import com.wallhub.android.core.model.VisualStyle
+import com.wallhub.android.core.model.WorkshopVideoStreamRepository
+import com.wallhub.android.data.downloads.WorkshopSourceCacheManager
+import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.receiveAsFlow
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
+import javax.inject.Inject
+
+@HiltViewModel
+class SettingsViewModel
+    @Inject
+    internal constructor(
+        @ApplicationContext private val context: Context,
+        private val settingsRepository: SettingsRepository,
+        private val appLocaleController: AppLocaleController,
+        private val launcherIconController: LauncherIconController,
+        private val steamSessionRepository: SteamSessionRepository,
+        private val diagnosticExportRepository: DiagnosticExportRepository,
+        private val steamAccessRepository: SteamAccessRepository,
+        private val appUpdateRepository: AppUpdateRepository,
+        private val workshopVideoStreamRepository: WorkshopVideoStreamRepository,
+        private val workshopSourceCacheManager: WorkshopSourceCacheManager,
+    ) : ViewModel() {
+        private val mutableDiagnosticExportState = MutableStateFlow(DiagnosticExportUiState())
+        private val mutableWorkshopSourceCacheState = MutableStateFlow(WorkshopSourceCacheUiState())
+        private val mutableAppUpdateState =
+            MutableStateFlow(
+                AppUpdateUiState(installed = appUpdateRepository.installedAppInfo),
+            )
+        private var appUpdateJob: Job? = null
+        private val effectChannel = Channel<SettingsEffect>(capacity = Channel.BUFFERED)
+
+        private val mutableAppLanguage = MutableStateFlow(appLocaleController.current())
+        val appLanguage: StateFlow<AppLanguage> = mutableAppLanguage.asStateFlow()
+
+        val preferences: StateFlow<AppPreferences> =
+            settingsRepository.preferences.stateIn(
+                scope = viewModelScope,
+                started = SharingStarted.WhileSubscribed(5_000),
+                initialValue = AppPreferences(),
+            )
+
+        val session: StateFlow<SteamSessionState> =
+            steamSessionRepository.session.stateIn(
+                scope = viewModelScope,
+                started = SharingStarted.WhileSubscribed(5_000),
+                initialValue = SteamSessionState(),
+            )
+
+        val diagnosticExportState: StateFlow<DiagnosticExportUiState> =
+            mutableDiagnosticExportState.asStateFlow()
+
+        val appUpdateState: StateFlow<AppUpdateUiState> = mutableAppUpdateState.asStateFlow()
+        val workshopSourceCacheState: StateFlow<WorkshopSourceCacheUiState> =
+            mutableWorkshopSourceCacheState.asStateFlow()
+
+        val steamAccessState: StateFlow<SteamAccessState> = steamAccessRepository.state
+        val effects: Flow<SettingsEffect> = effectChannel.receiveAsFlow()
+
+        init {
+            refreshWorkshopSourceCacheUsage()
+        }
+
+        fun refreshAppLanguage() {
+            mutableAppLanguage.value = appLocaleController.current()
+        }
+
+        fun onAction(action: SettingsAction) {
+            action.toEffect()?.let(effectChannel::trySend) ?: handleStateAction(action)
+        }
+
+        private fun handleStateAction(action: SettingsAction) {
+            if (handleAppearanceAndHomeAction(action)) return
+            if (handleDownloadAction(action)) return
+            if (handleSteamAction(action)) return
+            handleMaintenanceAction(action)
+        }
+
+        private fun handleAppearanceAndHomeAction(action: SettingsAction): Boolean {
+            when (action) {
+                is SettingsAction.LanguageChanged -> {
+                    mutableAppLanguage.value = action.language
+                    appLocaleController.set(action.language)
+                }
+                is SettingsAction.ThemeChanged -> setTheme(action.theme)
+                is SettingsAction.VisualStyleChanged -> setVisualStyle(action.style)
+                is SettingsAction.SchemeStyleChanged -> setSchemeStyle(action.style)
+                is SettingsAction.ContrastLevelChanged -> setContrastLevel(action.level)
+                is SettingsAction.PureBlackInDarkChanged -> setPureBlackInDark(action.enabled)
+                is SettingsAction.AccentChanged -> setAccent(action.accent, action.customColor)
+                is SettingsAction.SystemMonetEnabledChanged -> setSystemMonetEnabled(action.enabled)
+                is SettingsAction.ThemedLauncherIconEnabledChanged -> setThemedLauncherIconEnabled(action.enabled)
+                is SettingsAction.HomePreferencesChanged ->
+                    setHomePreferences(
+                        pageSize = action.pageSize,
+                        columns = action.columns,
+                        multiSelect = action.multiSelect,
+                        cardAction = action.cardAction,
+                        matureContentEnabled = action.matureContentEnabled,
+                    )
+                is SettingsAction.HomePaginationModeChanged -> setHomePaginationMode(action.mode)
+                is SettingsAction.HomeSearchFabChanged -> setHomeSearchFab(action.enabled)
+                is SettingsAction.HomeTopInfoChanged -> setHomeTopInfoVisible(action.visible)
+                is SettingsAction.HomeBottomBarAutoHideChanged -> setHomeBottomBarAutoHide(action.enabled)
+                else -> return false
+            }
+            return true
+        }
+
+        private fun handleDownloadAction(action: SettingsAction): Boolean {
+            when (action) {
+                is SettingsAction.DownloadPreferencesChanged ->
+                    setDownloadPreferences(
+                        maxConcurrentDownloads = action.maxConcurrentDownloads,
+                        chunkDownloadConcurrency = action.chunkDownloadConcurrency,
+                        proxyUrl = action.proxyUrl,
+                        mediaCacheLimitMb = action.mediaCacheLimitMb,
+                    )
+                is SettingsAction.MpkgConversionPresetChanged -> setMpkgConversionPreset(action.preset)
+                is SettingsAction.DownloadProxyEnabledChanged -> setDownloadProxyEnabled(action.enabled)
+                is SettingsAction.OnlineStreamCacheLimitChanged -> setOnlineStreamCacheLimitMb(action.limitMb)
+                SettingsAction.ClearOnlineStreamCache -> clearOnlineStreamCache()
+                is SettingsAction.WorkshopSourceCacheEnabledChanged -> setWorkshopSourceCacheEnabled(action.enabled)
+                is SettingsAction.WorkshopSourceCacheBudgetChanged -> setWorkshopSourceCacheBudgetGiB(action.budgetGiB)
+                SettingsAction.ClearWorkshopSourceCache -> clearWorkshopSourceCache()
+                is SettingsAction.OutputDirectorySelected -> setOutputDirectory(action.treeUri, action.label)
+                SettingsAction.ClearOutputDirectory -> clearOutputDirectory()
+                else -> return false
+            }
+            return true
+        }
+
+        private fun handleSteamAction(action: SettingsAction): Boolean {
+            when (action) {
+                is SettingsAction.SteamApiKeyChanged -> setSteamApiKey(action.apiKey)
+                is SettingsAction.SteamWorkshopDataSourceChanged -> setSteamWorkshopDataSource(action.source)
+                is SettingsAction.OnlineChunkPlaybackEnabledChanged -> setOnlineChunkPlaybackEnabled(action.enabled)
+                is SettingsAction.SteamAccessEnabledChanged -> setSteamAccessEnabled(action.enabled)
+                is SettingsAction.SteamAccessDohEndpointsChanged ->
+                    setSteamAccessDohEndpoints(action.endpoints, action.disabledEndpoints)
+                SettingsAction.RefreshSteamAccess -> refreshSteamAccess()
+                is SettingsAction.LoginSteam -> steamSessionRepository.login(action.accountName, action.password)
+                is SettingsAction.SubmitSteamGuardCode -> steamSessionRepository.submitSteamGuardCode(action.code)
+                SettingsAction.UseManualSteamGuardFallback -> steamSessionRepository.useManualSteamGuardFallback()
+                SettingsAction.RestoreSteamSession -> steamSessionRepository.reconnectPersistedSession()
+                SettingsAction.LogoutSteam -> logoutSteam()
+                else -> return false
+            }
+            return true
+        }
+
+        private fun handleMaintenanceAction(action: SettingsAction) {
+            when (action) {
+                SettingsAction.CheckForAppUpdate -> checkForAppUpdate()
+                SettingsAction.DownloadLatestRelease -> downloadLatestRelease()
+                SettingsAction.CancelAppUpdateDownload -> cancelAppUpdateDownload()
+                is SettingsAction.DiagnosticDocumentSelected -> exportDiagnostics(action.destinationUri)
+                is SettingsAction.SystemActionFailed -> reportSystemActionFailure(action.message)
+                is SettingsAction.InstallerFailed -> reportInstallerError(action.message)
+                SettingsAction.RestartSetupWizard -> restartSetupWizard()
+                else -> Unit
+            }
+        }
+
+        private fun reportSystemActionFailure(message: String) {
+            effectChannel.trySend(SettingsEffect.ShowMessage(message))
+        }
+
+        private fun setTheme(theme: ThemePreference) {
+            viewModelScope.launch { settingsRepository.setTheme(theme) }
+        }
+
+        private fun setVisualStyle(style: VisualStyle) {
+            viewModelScope.launch { settingsRepository.setVisualStyle(style) }
+        }
+
+        private fun setSchemeStyle(style: ThemeSchemeStyle) {
+            viewModelScope.launch { settingsRepository.setSchemeStyle(style) }
+        }
+
+        private fun setContrastLevel(level: ThemeContrastLevel) {
+            viewModelScope.launch { settingsRepository.setContrastLevel(level) }
+        }
+
+        private fun setPureBlackInDark(enabled: Boolean) {
+            viewModelScope.launch { settingsRepository.setPureBlackInDark(enabled) }
+        }
+
+        private fun setAccent(
+            accent: AccentPreference,
+            customColor: String? = null,
+        ) {
+            viewModelScope.launch {
+                settingsRepository.setSystemMonetEnabled(false)
+                settingsRepository.setAccent(accent, customColor)
+            }
+        }
+
+        private fun setSystemMonetEnabled(enabled: Boolean) {
+            viewModelScope.launch {
+                if (!enabled && preferences.value.accent == AccentPreference.MONET) {
+                    settingsRepository.setAccent(AccentPreference.DEFAULT)
+                }
+                settingsRepository.setSystemMonetEnabled(enabled)
+            }
+        }
+
+        private fun setThemedLauncherIconEnabled(enabled: Boolean) {
+            viewModelScope.launch {
+                settingsRepository.setThemedLauncherIconEnabled(enabled)
+                runCatching { launcherIconController.setThemedIconEnabled(enabled) }
+            }
+        }
+
+        private fun setHomePreferences(
+            pageSize: Int,
+            columns: Int,
+            multiSelect: Boolean,
+            cardAction: HomeCardAction,
+            matureContentEnabled: Boolean,
+        ) {
+            viewModelScope.launch {
+                settingsRepository.setHomePreferences(
+                    pageSize = pageSize,
+                    columns = columns,
+                    multiSelect = multiSelect,
+                    cardAction = cardAction,
+                    matureContentEnabled = matureContentEnabled,
+                )
+            }
+        }
+
+        private fun setHomePaginationMode(mode: HomePaginationMode) {
+            viewModelScope.launch { settingsRepository.setHomePaginationMode(mode) }
+        }
+
+        private fun setHomeSearchFab(enabled: Boolean) {
+            viewModelScope.launch { settingsRepository.setHomeSearchFab(enabled) }
+        }
+
+        private fun setHomeTopInfoVisible(visible: Boolean) {
+            viewModelScope.launch { settingsRepository.setHomeTopInfoVisible(visible) }
+        }
+
+        private fun setHomeBottomBarAutoHide(enabled: Boolean) {
+            viewModelScope.launch { settingsRepository.setHomeBottomBarAutoHide(enabled) }
+        }
+
+        private fun setDownloadPreferences(
+            maxConcurrentDownloads: Int,
+            chunkDownloadConcurrency: Int,
+            proxyUrl: String,
+            mediaCacheLimitMb: Int,
+        ) {
+            viewModelScope.launch {
+                settingsRepository.setDownloadPreferences(
+                    maxConcurrentDownloads = maxConcurrentDownloads,
+                    chunkDownloadConcurrency = chunkDownloadConcurrency,
+                    proxyUrl = proxyUrl,
+                    mediaCacheLimitMb = mediaCacheLimitMb,
+                )
+            }
+        }
+
+        private fun setMpkgConversionPreset(preset: MpkgConversionPreset) {
+            viewModelScope.launch { settingsRepository.setMpkgConversionPreset(preset) }
+        }
+
+        private fun setOnlineStreamCacheLimitMb(limitMb: Int) {
+            viewModelScope.launch { settingsRepository.setOnlineStreamCacheLimitMb(limitMb) }
+        }
+
+        private fun clearOnlineStreamCache() {
+            viewModelScope.launch {
+                runCatching { workshopVideoStreamRepository.clearCache() }
+                    .onSuccess { clearedBytes ->
+                        // SDK-served playback holds its decrypted chunks in one bounded in-memory cache per
+                        // stream, so once no legacy leftovers remain there is nothing on disk to free. Saying
+                        // "cleared 0 B" there would claim work that did not happen, so the empty reading
+                        // reports itself instead.
+                        val message =
+                            if (clearedBytes > 0L) {
+                                context.getString(
+                                    R.string.settings_streaming_cache_cleared,
+                                    Formatter.formatFileSize(context, clearedBytes),
+                                )
+                            } else {
+                                context.getString(R.string.settings_streaming_cache_empty)
+                            }
+                        effectChannel.send(SettingsEffect.ShowMessage(message))
+                    }.onFailure {
+                        effectChannel.send(
+                            SettingsEffect.ShowMessage(
+                                context.getString(R.string.settings_streaming_cache_clear_failed),
+                            ),
+                        )
+                    }
+            }
+        }
+
+        private fun setWorkshopSourceCacheEnabled(enabled: Boolean) {
+            viewModelScope.launch {
+                settingsRepository.setWorkshopSourceCacheEnabled(enabled)
+                if (!enabled) workshopSourceCacheManager.reconcileAndEnforceBudget()
+                refreshWorkshopSourceCacheUsage()
+            }
+        }
+
+        private fun setWorkshopSourceCacheBudgetGiB(budgetGiB: Int) {
+            if (budgetGiB <= 0) return
+            viewModelScope.launch {
+                settingsRepository.setWorkshopSourceCacheBudgetGiB(budgetGiB)
+                workshopSourceCacheManager.reconcileAndEnforceBudget()
+                refreshWorkshopSourceCacheUsage()
+            }
+        }
+
+        private fun refreshWorkshopSourceCacheUsage() {
+            viewModelScope.launch {
+                val retainedBytes = runCatching { workshopSourceCacheManager.retainedBytes() }.getOrDefault(0L)
+                mutableWorkshopSourceCacheState.value =
+                    mutableWorkshopSourceCacheState.value.copy(retainedBytes = retainedBytes)
+            }
+        }
+
+        private fun clearWorkshopSourceCache() {
+            if (mutableWorkshopSourceCacheState.value.isClearing) return
+            mutableWorkshopSourceCacheState.value = mutableWorkshopSourceCacheState.value.copy(isClearing = true)
+            viewModelScope.launch {
+                runCatching { workshopSourceCacheManager.clearRetained() }
+                    .onSuccess { clearedBytes ->
+                        mutableWorkshopSourceCacheState.value =
+                            WorkshopSourceCacheUiState(
+                                retainedBytes =
+                                    runCatching { workshopSourceCacheManager.retainedBytes() }.getOrDefault(0L),
+                            )
+                        val message =
+                            if (clearedBytes > 0L) {
+                                context.getString(
+                                    R.string.settings_source_cache_cleared,
+                                    Formatter.formatFileSize(context, clearedBytes),
+                                )
+                            } else {
+                                context.getString(R.string.settings_source_cache_empty)
+                            }
+                        effectChannel.send(SettingsEffect.ShowMessage(message))
+                    }.onFailure {
+                        mutableWorkshopSourceCacheState.value =
+                            mutableWorkshopSourceCacheState.value.copy(isClearing = false)
+                        effectChannel.send(
+                            SettingsEffect.ShowMessage(
+                                context.getString(R.string.settings_source_cache_clear_failed),
+                            ),
+                        )
+                    }
+            }
+        }
+
+        private fun setDownloadProxyEnabled(enabled: Boolean) {
+            viewModelScope.launch { settingsRepository.setDownloadProxyEnabled(enabled) }
+        }
+
+        private fun setSteamAccessEnabled(enabled: Boolean) {
+            viewModelScope.launch { settingsRepository.setSteamAccessEnabled(enabled) }
+        }
+
+        private fun setSteamAccessDohEndpoints(
+            endpoints: List<String>,
+            disabledEndpoints: Set<String>,
+        ) {
+            viewModelScope.launch {
+                settingsRepository.setSteamAccessDohEndpoints(endpoints, disabledEndpoints)
+            }
+        }
+
+        private fun refreshSteamAccess() {
+            steamAccessRepository.refresh()
+        }
+
+        private fun setSteamApiKey(apiKey: String) {
+            viewModelScope.launch { settingsRepository.setSteamApiKey(apiKey) }
+        }
+
+        private fun setSteamWorkshopDataSource(source: SteamWorkshopDataSource) {
+            viewModelScope.launch { settingsRepository.setSteamWorkshopDataSource(source) }
+        }
+
+        private fun setOnlineChunkPlaybackEnabled(enabled: Boolean) {
+            viewModelScope.launch { settingsRepository.setOnlineChunkPlaybackEnabled(enabled) }
+        }
+
+        private fun setOutputDirectory(
+            treeUri: String,
+            label: String,
+        ) {
+            viewModelScope.launch { settingsRepository.setOutputDirectory(treeUri, label) }
+        }
+
+        private fun clearOutputDirectory() {
+            viewModelScope.launch { settingsRepository.clearOutputDirectory() }
+        }
+
+        private fun logoutSteam() {
+            steamSessionRepository.logout()
+        }
+
+        private fun restartSetupWizard() {
+            viewModelScope.launch { settingsRepository.setSetupWizardCompleted(false) }
+        }
+
+        private fun checkForAppUpdate() {
+            if (appUpdateJob != null) return
+            mutableAppUpdateState.value =
+                mutableAppUpdateState.value.copy(
+                    phase = AppUpdatePhase.CHECKING,
+                    release = null,
+                    downloadedApkPath = null,
+                    downloadedBytes = 0L,
+                    totalBytes = 0L,
+                    message = null,
+                )
+            appUpdateJob =
+                viewModelScope.launch {
+                    try {
+                        val release = appUpdateRepository.latestRelease()
+                        mutableAppUpdateState.value =
+                            mutableAppUpdateState.value.copy(
+                                phase = if (release?.isNewer == true) AppUpdatePhase.AVAILABLE else AppUpdatePhase.UP_TO_DATE,
+                                release = release,
+                                downloadedBytes = 0L,
+                                totalBytes = release?.assetSizeBytes ?: 0L,
+                                message = null,
+                            )
+                    } catch (error: CancellationException) {
+                        throw error
+                    } catch (_: Throwable) {
+                        mutableAppUpdateState.value =
+                            mutableAppUpdateState.value.copy(
+                                phase = AppUpdatePhase.FAILED,
+                                message = context.getString(R.string.settings_error_check_github_release),
+                            )
+                    } finally {
+                        appUpdateJob = null
+                    }
+                }
+        }
+
+        private fun downloadLatestRelease() {
+            val release = mutableAppUpdateState.value.release ?: return
+            if (appUpdateJob != null) return
+            mutableAppUpdateState.value =
+                mutableAppUpdateState.value.copy(
+                    phase = AppUpdatePhase.DOWNLOADING,
+                    downloadedApkPath = null,
+                    downloadedBytes = 0L,
+                    totalBytes = release.assetSizeBytes,
+                    message = null,
+                )
+            appUpdateJob =
+                viewModelScope.launch {
+                    try {
+                        val path =
+                            appUpdateRepository.downloadRelease(release) { downloaded, total ->
+                                if (mutableAppUpdateState.value.phase == AppUpdatePhase.DOWNLOADING) {
+                                    mutableAppUpdateState.value =
+                                        mutableAppUpdateState.value.copy(
+                                            downloadedBytes = downloaded,
+                                            totalBytes = total,
+                                        )
+                                }
+                            }
+                        mutableAppUpdateState.value =
+                            mutableAppUpdateState.value.copy(
+                                phase = AppUpdatePhase.DOWNLOADED,
+                                downloadedApkPath = path,
+                                downloadedBytes = release.assetSizeBytes,
+                                totalBytes = release.assetSizeBytes,
+                                message = null,
+                            )
+                    } catch (error: CancellationException) {
+                        throw error
+                    } catch (_: Throwable) {
+                        mutableAppUpdateState.value =
+                            mutableAppUpdateState.value.copy(
+                                phase = AppUpdatePhase.FAILED,
+                                downloadedApkPath = null,
+                                message = context.getString(R.string.settings_error_download_release_apk),
+                            )
+                    } finally {
+                        appUpdateJob = null
+                    }
+                }
+        }
+
+        private fun cancelAppUpdateDownload() {
+            val current = mutableAppUpdateState.value
+            val release = current.release ?: return
+            if (current.phase != AppUpdatePhase.DOWNLOADING) return
+            appUpdateRepository.cancelDownload()
+            appUpdateJob?.cancel()
+            mutableAppUpdateState.value =
+                current.copy(
+                    phase = if (release.isNewer) AppUpdatePhase.AVAILABLE else AppUpdatePhase.UP_TO_DATE,
+                    downloadedApkPath = null,
+                    downloadedBytes = 0L,
+                    totalBytes = release.assetSizeBytes,
+                    message = null,
+                )
+        }
+
+        override fun onCleared() {
+            appUpdateRepository.cancelDownload()
+            super.onCleared()
+        }
+
+        private fun reportInstallerError(message: String) {
+            mutableAppUpdateState.value =
+                mutableAppUpdateState.value.copy(
+                    phase = AppUpdatePhase.FAILED,
+                    message = message,
+                )
+        }
+
+        private fun exportDiagnostics(destinationUri: String) {
+            mutableDiagnosticExportState.value = DiagnosticExportUiState(isExporting = true)
+            viewModelScope.launch {
+                runCatching {
+                    diagnosticExportRepository.exportTo(destinationUri)
+                }.onSuccess {
+                    mutableDiagnosticExportState.value =
+                        DiagnosticExportUiState(
+                            message = context.getString(R.string.settings_diagnostic_exported),
+                        )
+                }.onFailure { error ->
+                    mutableDiagnosticExportState.value =
+                        DiagnosticExportUiState(
+                            message = context.getString(R.string.settings_error_diagnostic_export, error.javaClass.simpleName),
+                            isFailure = true,
+                        )
+                }
+            }
+        }
+    }

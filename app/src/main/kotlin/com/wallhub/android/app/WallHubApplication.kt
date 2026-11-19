@@ -1,0 +1,185 @@
+package com.wallhub.android
+
+import android.app.Application
+import android.os.Build
+import android.util.Log
+import androidx.lifecycle.DefaultLifecycleObserver
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.ProcessLifecycleOwner
+import androidx.work.Configuration
+import coil.ImageLoader
+import coil.ImageLoaderFactory
+import coil.decode.GifDecoder
+import coil.decode.ImageDecoderDecoder
+import com.wallhub.android.core.model.AccountWorkshopRepository
+import com.wallhub.android.core.model.LauncherIconController
+import com.wallhub.android.core.model.SettingsRepository
+import com.wallhub.android.core.model.SteamSessionPhase
+import com.wallhub.android.core.model.SteamSessionRepository
+import com.wallhub.android.data.downloads.DownloadWorkScheduler
+import com.wallhub.android.data.downloads.SteamWorkshopThumbnailCache
+import com.wallhub.android.data.downloads.WorkshopThumbnailFetcher
+import com.wallhub.android.data.downloads.WallHubDownloadWorkerFactory
+import com.wallhub.android.data.downloads.WorkshopSourceCacheManager
+import com.wallhub.android.data.steam.SteamWorkshopPublicSessionRouter
+import com.wallhub.android.data.steamaccess.SteamHttpClientFactory
+import dagger.hilt.android.HiltAndroidApp
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.launch
+import java.util.Locale
+import javax.inject.Inject
+
+@HiltAndroidApp
+class WallHubApplication :
+    Application(),
+    Configuration.Provider,
+    ImageLoaderFactory {
+    private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
+    @Inject
+    internal lateinit var workerFactory: WallHubDownloadWorkerFactory
+
+    @Inject
+    lateinit var steamHttpClientFactory: SteamHttpClientFactory
+
+    @Inject
+    lateinit var settingsRepository: SettingsRepository
+
+    @Inject
+    lateinit var launcherIconController: LauncherIconController
+
+    @Inject
+    lateinit var steamSessionRepository: SteamSessionRepository
+
+    @Inject
+    lateinit var accountWorkshopRepository: AccountWorkshopRepository
+
+    @Inject
+    internal lateinit var downloadWorkScheduler: DownloadWorkScheduler
+
+    @Inject
+    internal lateinit var workshopSourceCacheManager: WorkshopSourceCacheManager
+
+    @Inject
+    internal lateinit var publicSessionRouter: SteamWorkshopPublicSessionRouter
+
+    override fun onCreate() {
+        super.onCreate()
+        CrashDiagnostics.install(this)
+        steamSessionRepository.restorePersistedSession()
+        applicationScope.launch {
+            collectAccountCollectionCounts(
+                sessions = steamSessionRepository.session,
+                repository = accountWorkshopRepository,
+                onAuthenticated = publicSessionRouter::onAccountAuthenticated,
+                onFailure = { error -> Log.w(TAG, "Unable to refresh account collection counts", error) },
+            )
+        }
+        applicationScope.launch {
+            try {
+                workshopSourceCacheManager.reconcileAndEnforceBudget()
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Throwable) {
+                Log.e(TAG, "Unable to reconcile the Workshop source cache during startup", error)
+            }
+        }
+        applicationScope.launch {
+            try {
+                downloadWorkScheduler.wake()
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Throwable) {
+                // Commands are durable; a later process start or user action will submit another wake.
+                Log.e(TAG, "Unable to wake the durable download host during startup", error)
+            }
+        }
+        ProcessLifecycleOwner
+            .get()
+            .lifecycle
+            .addObserver(
+                object : DefaultLifecycleObserver {
+                    override fun onStart(owner: LifecycleOwner) {
+                        steamSessionRepository.onAppForegrounded()
+                    }
+
+                    override fun onStop(owner: LifecycleOwner) {
+                        steamSessionRepository.onAppBackgrounded()
+                        applicationScope.launch { publicSessionRouter.onAppBackgrounded() }
+                    }
+                },
+            )
+        applicationScope.launch {
+            try {
+                val preferences = settingsRepository.preferences.first()
+                launcherIconController.setThemedIconEnabled(preferences.useThemedLauncherIcon)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Throwable) {
+                Log.e(TAG, "Unable to apply startup preferences; defaults remain active", error)
+            }
+        }
+    }
+
+    override val workManagerConfiguration: Configuration
+        get() =
+            Configuration
+                .Builder()
+                .setWorkerFactory(workerFactory)
+                .build()
+
+    override fun newImageLoader(): ImageLoader =
+        ImageLoader
+            .Builder(this)
+            .okHttpClient(steamHttpClientFactory.newAnonymousReadBuilder().build())
+            .components {
+                add(WorkshopThumbnailFetcher.Factory(SteamWorkshopThumbnailCache(this@WallHubApplication, steamHttpClientFactory.newAnonymousReadBuilder())))
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                    add(ImageDecoderDecoder.Factory())
+                } else {
+                    add(GifDecoder.Factory())
+                }
+            }.build()
+
+    private companion object {
+        const val TAG = "WallHubApplication"
+    }
+}
+
+internal suspend fun collectAccountCollectionCounts(
+    sessions: Flow<com.wallhub.android.core.model.SteamSessionState>,
+    repository: AccountWorkshopRepository,
+    onAuthenticated: suspend () -> Unit = {},
+    onFailure: (Throwable) -> Unit = {},
+) {
+    sessions
+        .map(::accountCollectionCountIdentity)
+        .distinctUntilChanged()
+        .onEach { repository.invalidateCollectionCounts() }
+        .collectLatest { accountName ->
+            if (accountName != null) {
+                onAuthenticated()
+                try {
+                    repository.refreshCollectionCounts(accountName)
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (error: Throwable) {
+                    onFailure(error)
+                }
+            }
+        }
+}
+
+internal fun accountCollectionCountIdentity(state: com.wallhub.android.core.model.SteamSessionState): String? =
+    state.accountName
+        ?.takeIf { state.phase == SteamSessionPhase.SIGNED_IN && state.isConnected }
+        ?.lowercase(Locale.ROOT)

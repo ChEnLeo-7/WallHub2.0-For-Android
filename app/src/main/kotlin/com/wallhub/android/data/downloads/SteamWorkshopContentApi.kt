@@ -1,0 +1,207 @@
+package com.wallhub.android.data.downloads
+
+import com.wallhub.android.core.model.WALLPAPER_ENGINE_APP_ID
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withContext
+import okhttp3.Call
+import okhttp3.Callback
+import okhttp3.FormBody
+import okhttp3.OkHttpClient
+import okhttp3.Protocol
+import okhttp3.Request
+import org.json.JSONObject
+import java.io.IOException
+import java.util.concurrent.TimeUnit
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
+
+internal data class WorkshopContentTarget(
+    val publishedFileId: Long,
+    val title: String,
+    val appId: Int,
+    val contentManifestId: Long,
+    val expectedSize: Long,
+    val contentTypeHint: String?,
+    val fileUrl: String = "",
+    val rawFileName: String = "",
+    val previewUrl: String = "",
+)
+
+internal class SteamWorkshopContentApi(
+    clientBuilder: OkHttpClient.Builder,
+) {
+    private val client =
+        clientBuilder
+            // Some mainland Akamai edges advertise h2 but omit the server SETTINGS preface. This bounded
+            // Web API POST needs no multiplexing; HTTP/1.1 avoids that broken negotiation without weakening TLS.
+            .protocols(listOf(Protocol.HTTP_1_1))
+            .connectTimeout(8, TimeUnit.SECONDS)
+            .readTimeout(10, TimeUnit.SECONDS)
+            .callTimeout(12, TimeUnit.SECONDS)
+            .build()
+
+    suspend fun fetchContentTarget(publishedFileId: Long): WorkshopContentTarget =
+        withContext(Dispatchers.IO) {
+            require(publishedFileId > 0L) { "Invalid Workshop item ID" }
+            val form =
+                FormBody
+                    .Builder()
+                    .add("itemcount", "1")
+                    .add("publishedfileids[0]", publishedFileId.toString())
+                    .add("includetags", "true")
+                    .build()
+            val request =
+                Request
+                    .Builder()
+                    .url(PUBLISHED_FILE_DETAILS_URL)
+                    .post(form)
+                    .header("Accept", "application/json")
+                    .header("User-Agent", USER_AGENT)
+                    .build()
+            var transportFailure: IOException? = null
+            repeat(MAX_TRANSPORT_ATTEMPTS) { attempt ->
+                try {
+                    return@withContext parseTarget(client.newCall(request).awaitBody(), publishedFileId)
+                } catch (error: IOException) {
+                    transportFailure = error
+                    if (attempt + 1 >= MAX_TRANSPORT_ATTEMPTS) throw error
+                    client.connectionPool.evictAll()
+                }
+            }
+            throw transportFailure ?: IOException("Steam public details request failed")
+        }
+
+    private suspend fun Call.awaitBody(): String =
+        suspendCancellableCoroutine { continuation ->
+            continuation.invokeOnCancellation { cancel() }
+            enqueue(
+                object : Callback {
+                    override fun onFailure(
+                        call: Call,
+                        error: IOException,
+                    ) {
+                        if (continuation.isActive) continuation.resumeWithException(error)
+                    }
+
+                    override fun onResponse(
+                        call: Call,
+                        response: okhttp3.Response,
+                    ) {
+                        try {
+                            response.use {
+                                if (!it.isSuccessful) {
+                                    throw IOException("Steam public details request failed: HTTP ${it.code}")
+                                }
+                                val body =
+                                    it.body.byteStream().use { input ->
+                                        input.readBytesBounded(MAX_WORKSHOP_DETAILS_BYTES).toString(Charsets.UTF_8)
+                                    }
+                                if (continuation.isActive) continuation.resume(body)
+                            }
+                        } catch (error: Throwable) {
+                            if (continuation.isActive) continuation.resumeWithException(error)
+                        }
+                    }
+                },
+            )
+        }
+
+    internal fun parseTarget(
+        body: String,
+        publishedFileId: Long,
+    ): WorkshopContentTarget {
+        val details =
+            JSONObject(body)
+                .optJSONObject("response")
+                ?.optJSONArray("publishedfiledetails")
+                ?: error("Steam returned no Workshop details")
+        val detail = details.optJSONObject(0) ?: error("Steam returned no Workshop details")
+        check(detail.jsonLong("result") == RESULT_OK) {
+            "Steam returned an item error: ${detail.jsonLong("result")}"
+        }
+        val appId =
+            detail
+                .jsonLong("consumer_app_id")
+                .takeIf { it in 1..Int.MAX_VALUE.toLong() }
+                ?.toInt()
+                ?: error("Steam returned no valid Wallpaper Engine App ID")
+        check(appId == WALLPAPER_ENGINE_APP_ID) {
+            "Steam Workshop item belongs to unsupported app $appId"
+        }
+        val manifestId = manifestIdFromDetails(body)
+        val fileUrl = detail.jsonString("file_url")
+        check(manifestId != 0L || fileUrl.isNotBlank()) {
+            "This Workshop item has neither a content manifest nor a direct file URL"
+        }
+        return WorkshopContentTarget(
+            publishedFileId = publishedFileId,
+            title = detail.jsonString("title").ifBlank { "Workshop $publishedFileId" },
+            appId = appId,
+            contentManifestId = manifestId,
+            expectedSize = detail.jsonLong("file_size").coerceAtLeast(0L),
+            contentTypeHint =
+                detail.jsonTags().let { tags ->
+                    when {
+                        "video" in tags -> "video"
+                        "web" in tags || "website" in tags || "application" in tags -> "web"
+                        "scene" in tags -> "scene"
+                        else -> null
+                    }
+                },
+            fileUrl = fileUrl,
+            rawFileName = detail.jsonString("filename"),
+            previewUrl = detail.jsonString("preview_url"),
+        )
+    }
+
+    private fun JSONObject.jsonLong(name: String): Long =
+        when (val value = opt(name)) {
+            is Number -> value.toLong()
+            is String -> value.toLongOrNull() ?: 0L
+            else -> 0L
+        }
+
+    /**
+     * `hcontent_file` is a Steam uint64 that now exceeds Long.MAX_VALUE for recent items.
+     * Android's JSON parser degrades such literals to Double (losing precision) or drops
+     * them, so the raw body is matched and the digits are reinterpreted as unsigned bits
+     * of a Long; the wire and URL layers format it back as unsigned.
+     */
+    internal fun manifestIdFromDetails(body: String): Long =
+        HCONTENT_FILE_REGEX
+            .find(body)
+            ?.groupValues
+            ?.get(1)
+            ?.toULongOrNull()
+            ?.takeIf { it != 0UL }
+            ?.toLong()
+            ?: 0L
+
+    private fun JSONObject.jsonString(name: String): String = opt(name)?.toString()?.trim().orEmpty()
+
+    private fun JSONObject.jsonTags(): Set<String> {
+        val values = optJSONArray("tags") ?: return emptySet()
+        return buildSet {
+            for (index in 0 until values.length()) {
+                values
+                    .optJSONObject(index)
+                    ?.optString("tag")
+                    ?.trim()
+                    ?.lowercase()
+                    ?.takeIf(String::isNotBlank)
+                    ?.let(::add)
+            }
+        }
+    }
+
+    private companion object {
+        const val MAX_WORKSHOP_DETAILS_BYTES = 1024 * 1024
+        const val MAX_TRANSPORT_ATTEMPTS = 2
+        const val RESULT_OK = 1L
+        const val USER_AGENT = "WallHub-Android/0.6 (Workshop Downloader)"
+        const val PUBLISHED_FILE_DETAILS_URL =
+            "https://api.steampowered.com/ISteamRemoteStorage/GetPublishedFileDetails/v1/"
+        val HCONTENT_FILE_REGEX = Regex("\"hcontent_file\"\\s*:\\s*\"?(\\d+)\"?")
+    }
+}

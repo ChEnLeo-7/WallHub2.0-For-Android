@@ -1,0 +1,15 @@
+{
+  "aarSha256": "1e31bb2894e0679fbb785e79cb60ea70b9f3a95b77dd0cbe6d512cee30fb9cb7",
+  "coordinate": "io.steamcontent.sdk:sc-content-android-preview:0.1.162",
+  "nativeLibraries": {
+    "arm64-v8a/libsc_content_ffi.so": "e578e618fefe24c4ba09a272f3291666f6a3526a65b3e02a8b513e7ccb5f1e32",
+    "arm64-v8a/libsc_content_jni.so": "88e9b69470e3bcd484260f639c9b5d813aae3a6dc80c36860ad940b47286038f"
+  },
+  "pomSha256": "bca32644feb606322d2decd02676e4fc22fdae693c34614a2431fe06e036bc0b",
+  "schemaVersion": 2,
+  "sdkSource": {
+    "commit": "3686dd5a576bf59df4d1acc6afb1a86aa697d4ca",
+    "state": "dirty-candidate",
+    "treeSha256": "22eb86531a708bc26b08a322b3971f04de7707cf6bf3516de4078fc71f34c8ac"
+  }
+}

@@ -1,0 +1,256 @@
+@file:Suppress("ktlint:standard:function-naming")
+
+package com.wallhub.settings
+
+import android.Manifest
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.net.Uri
+import android.os.Build
+import android.provider.Settings
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
+import androidx.core.content.ContextCompat
+import androidx.core.app.NotificationManagerCompat
+import androidx.core.content.FileProvider
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
+import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.wallhub.android.R
+import kotlinx.coroutines.launch
+import java.io.File
+
+@Composable
+@Suppress("CyclomaticComplexMethod")
+fun SettingsRoute(
+    onBack: () -> Unit,
+    openSteamSignIn: Boolean = false,
+    viewModel: SettingsViewModel = hiltViewModel(),
+) {
+    val context = LocalContext.current
+    val selectedExportDirectory = stringResource(R.string.settings_selected_export_directory)
+    val authorizeExportDirectoryError = stringResource(R.string.settings_error_authorize_export_directory)
+    val verifiedApkMissingError = stringResource(R.string.settings_error_verified_apk_missing)
+    val openAndroidInstallerError = stringResource(R.string.settings_error_open_android_installer)
+    val unknownSourcesPermissionError = stringResource(R.string.settings_error_unknown_sources_permission)
+    val openUnknownSourcesSettingsError = stringResource(R.string.settings_error_open_unknown_sources_settings)
+    val openNotificationSettingsError = stringResource(R.string.settings_error_open_notification_settings)
+    val preferences by viewModel.preferences.collectAsStateWithLifecycle()
+    val session by viewModel.session.collectAsStateWithLifecycle()
+    val appLanguage by viewModel.appLanguage.collectAsStateWithLifecycle()
+    val diagnosticExportState by viewModel.diagnosticExportState.collectAsStateWithLifecycle()
+    val appUpdateState by viewModel.appUpdateState.collectAsStateWithLifecycle()
+    val workshopSourceCacheState by viewModel.workshopSourceCacheState.collectAsStateWithLifecycle()
+    val steamAccessState by viewModel.steamAccessState.collectAsStateWithLifecycle()
+    val snackbarHostState = remember { SnackbarHostState() }
+    var notificationsGranted by rememberSaveable {
+        mutableStateOf(
+            Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+                ContextCompat.checkSelfPermission(
+                    context,
+                    Manifest.permission.POST_NOTIFICATIONS,
+                ) == PackageManager.PERMISSION_GRANTED,
+        )
+    }
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+        viewModel.refreshAppLanguage()
+        notificationsGranted =
+            NotificationManagerCompat.from(context).areNotificationsEnabled() &&
+            (
+                Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+                    ContextCompat.checkSelfPermission(
+                        context,
+                        Manifest.permission.POST_NOTIFICATIONS,
+                    ) == PackageManager.PERMISSION_GRANTED
+            )
+    }
+    val outputDirectoryLauncher =
+        rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.OpenDocumentTree(),
+        ) { treeUri ->
+            if (treeUri != null) {
+                val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                runCatching { context.contentResolver.takePersistableUriPermission(treeUri, flags) }
+                    .onSuccess {
+                        viewModel.onAction(
+                            SettingsAction.OutputDirectorySelected(
+                                treeUri = treeUri.toString(),
+                                label =
+                                    treeUri.lastPathSegment
+                                        ?.substringAfterLast(':')
+                                        ?.ifBlank { null }
+                                        ?: selectedExportDirectory,
+                            ),
+                        )
+                    }.onFailure {
+                        viewModel.onAction(
+                            SettingsAction.SystemActionFailed(
+                                authorizeExportDirectoryError,
+                            ),
+                        )
+                    }
+            }
+        }
+    val notificationLauncher =
+        rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.RequestPermission(),
+        ) { granted -> notificationsGranted = granted }
+    val diagnosticExportLauncher =
+        rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.CreateDocument("text/plain"),
+        ) { documentUri ->
+            if (documentUri != null) {
+                viewModel.onAction(SettingsAction.DiagnosticDocumentSelected(documentUri.toString()))
+            }
+        }
+    var pendingUpdateApkPath by rememberSaveable { mutableStateOf<String?>(null) }
+    val launchSystemInstaller: (String) -> Unit = { path ->
+        runCatching {
+            val apk = File(path)
+            check(apk.isFile) { verifiedApkMissingError }
+            val uri = FileProvider.getUriForFile(context, "${context.packageName}.files", apk)
+            val intent =
+                Intent(Intent.ACTION_VIEW).apply {
+                    setDataAndType(uri, APK_MIME_TYPE)
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+            context.startActivity(intent)
+        }.onFailure {
+            viewModel.onAction(
+                SettingsAction.InstallerFailed(
+                    openAndroidInstallerError,
+                ),
+            )
+        }
+    }
+    val unknownSourcesLauncher =
+        rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.StartActivityForResult(),
+        ) {
+            val path = pendingUpdateApkPath
+            pendingUpdateApkPath = null
+            if (
+                path != null &&
+                context.packageManager.canRequestPackageInstalls()
+            ) {
+                launchSystemInstaller(path)
+            } else if (path != null) {
+                viewModel.onAction(
+                    SettingsAction.InstallerFailed(
+                        unknownSourcesPermissionError,
+                    ),
+                )
+            }
+        }
+    val requestReleaseInstall: (String) -> Unit = { path ->
+        if (!context.packageManager.canRequestPackageInstalls()) {
+            pendingUpdateApkPath = path
+            val intent =
+                Intent(
+                    Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                    Uri.parse("package:${context.packageName}"),
+                )
+            runCatching { unknownSourcesLauncher.launch(intent) }
+                .onFailure {
+                    pendingUpdateApkPath = null
+                    viewModel.onAction(
+                        SettingsAction.InstallerFailed(
+                            openUnknownSourcesSettingsError,
+                        ),
+                    )
+                }
+        } else {
+            launchSystemInstaller(path)
+        }
+    }
+    val currentRequestReleaseInstall by rememberUpdatedState(requestReleaseInstall)
+    LaunchedEffect(viewModel, context) {
+        viewModel.effects.collect { effect ->
+            when (effect) {
+                SettingsEffect.SelectOutputDirectory -> outputDirectoryLauncher.launch(null)
+                SettingsEffect.ExportDiagnostics -> {
+                    diagnosticExportLauncher.launch(
+                        "wallhub-diagnostics-${System.currentTimeMillis()}.txt",
+                    )
+                }
+                SettingsEffect.RequestNotifications -> {
+                    if (
+                        Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                        ContextCompat.checkSelfPermission(
+                            context,
+                            Manifest.permission.POST_NOTIFICATIONS,
+                        ) != PackageManager.PERMISSION_GRANTED
+                    ) {
+                        notificationLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                    } else {
+                        runCatching {
+                            context.startActivity(
+                                Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+                                    putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+                                },
+                            )
+                        }.onFailure {
+                            viewModel.onAction(
+                                SettingsAction.SystemActionFailed(
+                                    openNotificationSettingsError,
+                                ),
+                            )
+                        }
+                    }
+                }
+                is SettingsEffect.InstallDownloadedRelease -> {
+                    currentRequestReleaseInstall(effect.path)
+                }
+                is SettingsEffect.OpenExternalUri -> {
+                    runCatching {
+                        context.startActivity(
+                            Intent(Intent.ACTION_VIEW, Uri.parse(effect.uri)).apply {
+                                addCategory(Intent.CATEGORY_BROWSABLE)
+                            },
+                        )
+                    }.onFailure {
+                        viewModel.onAction(SettingsAction.SystemActionFailed(effect.failureMessage))
+                    }
+                }
+                is SettingsEffect.ShowMessage -> snackbarHostState.showSnackbar(effect.message)
+            }
+        }
+    }
+    Box(modifier = Modifier.fillMaxSize()) {
+        SettingsScreen(
+            preferences = preferences,
+            appLanguage = appLanguage,
+            steamAccessState = steamAccessState,
+            session = session,
+            diagnosticExportState = diagnosticExportState,
+            notificationsGranted = notificationsGranted,
+            appUpdateState = appUpdateState,
+            workshopSourceCacheState = workshopSourceCacheState,
+            openSteamSignIn = openSteamSignIn,
+            onBack = onBack,
+            onAction = viewModel::onAction,
+        )
+        SnackbarHost(
+            hostState = snackbarHostState,
+            modifier = Modifier.align(Alignment.BottomCenter),
+        )
+    }
+}

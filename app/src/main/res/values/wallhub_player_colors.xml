@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="wallhub_player_progress_played">#FFFFFFFF</color>
+    <color name="wallhub_player_progress_scrubber">#FFFFFFFF</color>
+    <color name="wallhub_player_progress_buffered">#A6FFFFFF</color>
+    <color name="wallhub_player_progress_unplayed">#66FFFFFF</color>
+</resources>

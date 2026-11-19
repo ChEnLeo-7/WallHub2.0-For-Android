@@ -1,0 +1,22 @@
+package com.wallhub.android.core.designsystem
+
+import androidx.compose.ui.graphics.Color
+
+/** Non-theme colors with a stable semantic role across feature screens. */
+object WallHubColorTokens {
+    val mediaCanvas: Color = Color.Black
+    val mediaOverlayScrim: Color = Color.Black.copy(alpha = 0.58f)
+    val mediaControlScrim: Color = Color.Black.copy(alpha = 0.38f)
+    val mediaOverlayContent: Color = Color.White
+
+    /** Supporting copy over media: a light neutral rather than white-at-lower-opacity. */
+    val mediaOverlaySupportingContent: Color = Color(0xFFE9EEEC)
+
+    /** Container behind media controls (play/pause chips, hold-speed indicator). */
+    val mediaControlContainer: Color = Color.Black.copy(alpha = 0.54f)
+    val mediaControlContent: Color = Color.White
+    val customAccentPreviewOnLight: Color = Color(0xFF171C19)
+    val customAccentPreviewOnDark: Color = Color.White
+    val statusSuccessOnLight: Color = Color(0xFF176B3A)
+    val statusSuccessOnDark: Color = Color(0xFF7AD99A)
+}

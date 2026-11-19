@@ -1,0 +1,498 @@
+package com.wallhub.android.core.database
+
+import android.content.Context
+import android.util.Log
+import androidx.datastore.core.DataStore
+import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
+import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.booleanPreferencesKey
+import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.emptyPreferences
+import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.datastore.preferences.preferencesDataStore
+import com.wallhub.android.core.model.AccentPreference
+import com.wallhub.android.core.model.AppPreferences
+import com.wallhub.android.core.model.DEFAULT_CHUNK_DOWNLOAD_CONCURRENCY
+import com.wallhub.android.core.model.DEFAULT_HOME_PAGE_SIZE
+import com.wallhub.android.core.model.DEFAULT_MAX_CONCURRENT_DOWNLOADS
+import com.wallhub.android.core.model.DEFAULT_STEAM_ACCESS_DOH_ENDPOINTS
+import com.wallhub.android.core.model.HomeCardAction
+import com.wallhub.android.core.model.HomePaginationMode
+import com.wallhub.android.core.model.LocalWallpaperViewMode
+import com.wallhub.android.core.model.MAX_MANUAL_HOME_COLUMNS
+import com.wallhub.android.core.model.MpkgConversionPreset
+import com.wallhub.android.core.model.SteamAccessMode
+import com.wallhub.android.core.model.SteamDohCatalog
+import com.wallhub.android.core.model.SteamWorkshopDataSource
+import com.wallhub.android.core.model.ThemeContrastLevel
+import com.wallhub.android.core.model.ThemePreference
+import com.wallhub.android.core.model.ThemeSchemeStyle
+import com.wallhub.android.core.model.VisualStyle
+import com.wallhub.android.core.model.isSupportedDownloadProxyUrl
+import com.wallhub.android.core.model.normalizeSteamAccessDohEndpoints
+import com.wallhub.android.core.model.normalizedHomePageSize
+import com.wallhub.android.core.model.safeChunkDownloadConcurrency
+import com.wallhub.android.core.model.DEFAULT_STREAM_CACHE_MB
+import com.wallhub.android.core.model.MAX_STREAM_CACHE_MB
+import com.wallhub.android.core.model.MIN_STREAM_CACHE_MB
+import com.wallhub.android.core.model.normalizedStreamCacheLimitMb
+import com.wallhub.android.core.model.safeMaxConcurrentDownloads
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
+import java.io.IOException
+
+private const val PREFERENCES_FILE_NAME = "wallhub_formal_preferences"
+private val Context.dataStore by preferencesDataStore(
+    name = PREFERENCES_FILE_NAME,
+    corruptionHandler = ReplaceFileCorruptionHandler { emptyPreferences() },
+)
+
+class AppPreferencesStore internal constructor(
+    private val dataStore: DataStore<Preferences>,
+) {
+    constructor(context: Context) : this(context.applicationContext.dataStore)
+
+    val preferences: Flow<AppPreferences> =
+        dataStore.data
+            .catch { error ->
+                if (error is IOException) {
+                    Log.w(TAG, "Preferences could not be read; using defaults", error)
+                    emit(preferencesFallbackFor(error))
+                } else {
+                    throw error
+                }
+            }.map(::toAppPreferences)
+
+    suspend fun setSetupWizardCompleted(completed: Boolean) {
+        dataStore.edit { preferences ->
+            preferences[Keys.setupWizardCompleted] = completed
+        }
+    }
+
+    suspend fun setTheme(theme: ThemePreference) {
+        dataStore.edit { preferences ->
+            preferences[Keys.theme] = theme.name
+        }
+    }
+
+    suspend fun setVisualStyle(style: VisualStyle) {
+        dataStore.edit { preferences ->
+            preferences[Keys.visualStyle] = style.stableId
+        }
+    }
+
+    suspend fun setAccent(
+        accent: AccentPreference,
+        customColor: String?,
+    ) {
+        dataStore.edit { preferences ->
+            preferences[Keys.accent] = accent.name
+            customColor?.trim()?.takeIf(String::isNotBlank)?.let { color ->
+                preferences[Keys.customAccentColor] = color
+            }
+        }
+    }
+
+    suspend fun setSchemeStyle(style: ThemeSchemeStyle) {
+        dataStore.edit { preferences ->
+            preferences[Keys.schemeStyle] = style.name
+        }
+    }
+
+    suspend fun setContrastLevel(level: ThemeContrastLevel) {
+        dataStore.edit { preferences ->
+            preferences[Keys.contrastLevel] = level.name
+        }
+    }
+
+    suspend fun setPureBlackInDark(enabled: Boolean) {
+        dataStore.edit { preferences ->
+            preferences[Keys.pureBlackInDark] = enabled
+        }
+    }
+
+    suspend fun setSystemMonetEnabled(enabled: Boolean) {
+        dataStore.edit { preferences ->
+            preferences[Keys.useSystemMonet] = enabled
+        }
+    }
+
+    suspend fun setThemedLauncherIconEnabled(enabled: Boolean) {
+        dataStore.edit { preferences ->
+            preferences[Keys.useThemedLauncherIcon] = enabled
+        }
+    }
+
+    suspend fun setHomePreferences(
+        pageSize: Int,
+        columns: Int,
+        multiSelect: Boolean,
+        cardAction: HomeCardAction,
+        matureContentEnabled: Boolean,
+    ) {
+        dataStore.edit { preferences ->
+            preferences[Keys.homePageSize] = pageSize.normalizedHomePageSize()
+            preferences[Keys.homeCardsPerRow] = columns.coerceIn(0, MAX_MANUAL_HOME_COLUMNS)
+            preferences[Keys.homeFilterMultiSelect] = multiSelect
+            preferences[Keys.homeCardAction] = cardAction.name
+            preferences[Keys.matureContentEnabled] = matureContentEnabled
+        }
+    }
+
+    suspend fun setHomeSearchFab(enabled: Boolean) {
+        dataStore.edit { preferences ->
+            preferences[Keys.homeSearchFab] = enabled
+        }
+    }
+
+    suspend fun setHomeTopInfoVisible(visible: Boolean) {
+        dataStore.edit { preferences ->
+            preferences[Keys.showHomeTopInfo] = visible
+        }
+    }
+
+    suspend fun setHomeBottomBarAutoHide(enabled: Boolean) {
+        dataStore.edit { preferences ->
+            preferences[Keys.homeBottomBarAutoHide] = enabled
+        }
+    }
+
+    suspend fun setDiscoverResultsColumns(columns: Int) {
+        dataStore.edit { preferences ->
+            preferences[Keys.discoverResultsColumns] = columns.coerceIn(1, 2)
+        }
+    }
+
+    suspend fun setHomePaginationMode(mode: HomePaginationMode) {
+        dataStore.edit { preferences ->
+            preferences[Keys.homePaginationMode] = mode.name
+        }
+    }
+
+    suspend fun setDownloadPreferences(
+        maxConcurrentDownloads: Int,
+        chunkDownloadConcurrency: Int,
+        proxyUrl: String,
+        mediaCacheLimitMb: Int,
+    ) {
+        dataStore.edit { preferences ->
+            preferences[Keys.maxConcurrentDownloads] = safeMaxConcurrentDownloads(maxConcurrentDownloads)
+            preferences[Keys.chunkDownloadConcurrency] = safeChunkDownloadConcurrency(chunkDownloadConcurrency)
+            preferences[Keys.downloadProxyUrl] = proxyUrl.trim()
+            if (!isSupportedDownloadProxyUrl(proxyUrl)) preferences[Keys.downloadProxyEnabled] = false
+            preferences[Keys.mediaCacheLimitMb] = mediaCacheLimitMb.normalizedStreamCacheLimitMb()
+        }
+    }
+
+    suspend fun setMpkgConversionPreset(preset: MpkgConversionPreset) {
+        dataStore.edit { preferences ->
+            preferences[Keys.mpkgConversionPreset] = preset.stableId
+        }
+    }
+
+    suspend fun setPreserveAudio(enabled: Boolean) {
+        dataStore.edit { preferences ->
+            preferences[Keys.preserveAudio] = enabled
+        }
+    }
+
+    suspend fun setWorkshopSourceCacheEnabled(enabled: Boolean) {
+        dataStore.edit { preferences ->
+            preferences[Keys.workshopSourceCacheEnabled] = enabled
+        }
+    }
+
+    suspend fun setWorkshopSourceCacheBudgetGiB(budgetGiB: Int) {
+        require(budgetGiB >= 0) { "Workshop source-cache budget must not be negative" }
+        dataStore.edit { preferences ->
+            preferences[Keys.workshopSourceCacheBudgetGiB] = budgetGiB
+        }
+    }
+
+    suspend fun setOnlineStreamCacheLimitMb(limitMb: Int) {
+        dataStore.edit { preferences ->
+            preferences[Keys.mediaCacheLimitMb] = limitMb.normalizedStreamCacheLimitMb()
+        }
+    }
+
+    suspend fun setDownloadProxyEnabled(enabled: Boolean) {
+        dataStore.edit { preferences ->
+            val canEnable = enabled && isSupportedDownloadProxyUrl(preferences[Keys.downloadProxyUrl].orEmpty())
+            preferences[Keys.downloadProxyEnabled] = canEnable
+        }
+    }
+
+    suspend fun setSteamAccessEnabled(enabled: Boolean) {
+        dataStore.edit { preferences ->
+            preferences[Keys.steamAccessEnabled] = enabled
+        }
+    }
+
+    suspend fun setSteamAccessMode(mode: SteamAccessMode) {
+        dataStore.edit { preferences ->
+            preferences[Keys.steamAccessMode] = mode.name
+        }
+    }
+
+    suspend fun setSteamAccessDohEndpoints(
+        endpoints: List<String>,
+        disabledEndpoints: Set<String>,
+    ) {
+        dataStore.edit { preferences ->
+            val normalized =
+                normalizeSteamAccessDohEndpoints(endpoints)
+                    .ifEmpty { DEFAULT_STEAM_ACCESS_DOH_ENDPOINTS }
+            val disabled =
+                normalizeSteamAccessDohEndpoints(disabledEndpoints.toList())
+                    .filterTo(linkedSetOf()) { endpoint -> endpoint in normalized }
+            preferences[Keys.steamAccessMode] = SteamAccessMode.SMART_DOH.name
+            preferences[Keys.steamAccessDohEndpoints] = normalized.joinToString("\n")
+            if (disabled.isEmpty()) {
+                preferences.remove(Keys.steamAccessDisabledDohEndpoints)
+            } else {
+                preferences[Keys.steamAccessDisabledDohEndpoints] = disabled.joinToString("\n")
+            }
+        }
+    }
+
+    suspend fun setSteamAccessHosts(hosts: String) {
+        dataStore.edit { preferences ->
+            preferences[Keys.steamAccessHosts] = hosts.trim().take(1_048_576)
+        }
+    }
+
+    @Deprecated("Steam API credentials are written through SteamApiCredentialRepository")
+    suspend fun setSteamApiKey(apiKey: String) {
+        dataStore.edit { preferences ->
+            val normalized = apiKey.trim()
+            if (normalized.isEmpty()) {
+                preferences.remove(Keys.steamApiKey)
+            } else {
+                preferences[Keys.steamApiKey] = normalized
+            }
+        }
+    }
+
+    internal suspend fun readLegacySteamApiKey(): String =
+        dataStore.data
+            .first()[Keys.steamApiKey]
+            .orEmpty()
+
+    internal suspend fun clearLegacySteamApiKey() {
+        dataStore.edit { preferences -> preferences.remove(Keys.steamApiKey) }
+    }
+
+    suspend fun setSteamWorkshopDataSource(source: SteamWorkshopDataSource) {
+        dataStore.edit { preferences ->
+            preferences[Keys.steamWorkshopDataSource] = source.name
+        }
+    }
+
+    suspend fun setOnlineChunkPlaybackEnabled(enabled: Boolean) {
+        dataStore.edit { preferences ->
+            preferences[Keys.onlineChunkPlaybackEnabled] = enabled
+        }
+    }
+
+    suspend fun setOutputDirectory(
+        treeUri: String,
+        label: String,
+    ) {
+        require(treeUri.isNotBlank()) { "Export directory URI must not be blank" }
+        dataStore.edit { preferences ->
+            preferences[Keys.outputTreeUri] = treeUri
+            preferences[Keys.outputDirectoryLabel] = label
+        }
+    }
+
+    suspend fun clearOutputDirectory() {
+        dataStore.edit { preferences ->
+            preferences.remove(Keys.outputTreeUri)
+            preferences.remove(Keys.outputDirectoryLabel)
+        }
+    }
+
+    suspend fun setLocalManagementDirectory(
+        treeUri: String,
+        label: String,
+    ) {
+        require(treeUri.isNotBlank()) { "Local management directory URI must not be blank" }
+        dataStore.edit { preferences ->
+            preferences[Keys.localManagementTreeUri] = treeUri
+            preferences[Keys.localManagementDirectoryLabel] = label
+        }
+    }
+
+    suspend fun clearLocalManagementDirectory() {
+        dataStore.edit { preferences ->
+            preferences.remove(Keys.localManagementTreeUri)
+            preferences.remove(Keys.localManagementDirectoryLabel)
+        }
+    }
+
+    suspend fun setLocalWallpaperViewMode(mode: LocalWallpaperViewMode) {
+        dataStore.edit { preferences ->
+            preferences[Keys.localWallpaperViewMode] = mode.name
+        }
+    }
+
+    private fun toAppPreferences(preferences: Preferences): AppPreferences {
+        val theme =
+            preferences[Keys.theme]
+                ?.let { value -> runCatching { ThemePreference.valueOf(value) }.getOrNull() }
+                ?: ThemePreference.SYSTEM
+        val steamAccessDohEndpoints =
+            preferences[Keys.steamAccessDohEndpoints]
+                ?.lineSequence()
+                ?.toList()
+                ?.let(::normalizeSteamAccessDohEndpoints)
+                ?.let(SteamDohCatalog::migrateLegacyUrls)
+                ?.let { stored -> normalizeSteamAccessDohEndpoints(stored + DEFAULT_STEAM_ACCESS_DOH_ENDPOINTS) }
+                ?.takeIf { endpoints -> endpoints.isNotEmpty() }
+                ?: DEFAULT_STEAM_ACCESS_DOH_ENDPOINTS
+        val disabledSteamAccessDohEndpoints =
+            preferences[Keys.steamAccessDisabledDohEndpoints]
+                ?.lineSequence()
+                ?.toList()
+                ?.let(::normalizeSteamAccessDohEndpoints)
+                ?.let(SteamDohCatalog::migrateLegacyUrls)
+                ?.filterTo(linkedSetOf()) { endpoint -> endpoint in steamAccessDohEndpoints }
+                .orEmpty()
+        return AppPreferences(
+            setupWizardCompleted = preferences[Keys.setupWizardCompleted] ?: false,
+            theme = theme,
+            visualStyle = VisualStyle.fromStableId(preferences[Keys.visualStyle]),
+            accent = preferences.enumValue(Keys.accent, AccentPreference.MONET),
+            customAccentColor = preferences[Keys.customAccentColor].orEmpty().ifBlank { "#5B7AA0" },
+            useSystemMonet = preferences[Keys.useSystemMonet] ?: true,
+            schemeStyle = ThemeSchemeStyle.fromStored(preferences[Keys.schemeStyle]),
+            contrastLevel = ThemeContrastLevel.fromStored(preferences[Keys.contrastLevel]),
+            pureBlackInDark = preferences[Keys.pureBlackInDark] ?: false,
+            useThemedLauncherIcon = preferences[Keys.useThemedLauncherIcon] ?: true,
+            outputTreeUri = preferences[Keys.outputTreeUri],
+            outputDirectoryLabel = preferences[Keys.outputDirectoryLabel],
+            localManagementTreeUri = preferences[Keys.localManagementTreeUri],
+            localManagementDirectoryLabel = preferences[Keys.localManagementDirectoryLabel],
+            localWallpaperViewMode =
+                preferences.enumValue(
+                    Keys.localWallpaperViewMode,
+                    LocalWallpaperViewMode.LIST,
+                ),
+            homePageSize = (preferences[Keys.homePageSize] ?: DEFAULT_HOME_PAGE_SIZE).normalizedHomePageSize(),
+            homeColumns =
+                (
+                    preferences[Keys.homeCardsPerRow]
+                        ?: preferences[Keys.homeColumns]
+                        ?: 0
+                ).coerceIn(0, MAX_MANUAL_HOME_COLUMNS),
+            homeFilterMultiSelect = preferences[Keys.homeFilterMultiSelect] ?: true,
+            homeSearchFab = preferences[Keys.homeSearchFab] ?: true,
+            showHomeTopInfo = preferences[Keys.showHomeTopInfo] ?: false,
+            homeBottomBarAutoHide = preferences[Keys.homeBottomBarAutoHide] ?: false,
+            discoverResultsColumns = (preferences[Keys.discoverResultsColumns] ?: 2).coerceIn(1, 2),
+            homeCardAction = preferences.enumValue(Keys.homeCardAction, HomeCardAction.DOWNLOAD),
+            homePaginationMode =
+                preferences.enumValue(
+                    Keys.homePaginationMode,
+                    HomePaginationMode.INFINITE_SCROLL,
+                ),
+            matureContentEnabled = preferences[Keys.matureContentEnabled] ?: false,
+            maxConcurrentDownloads =
+                safeMaxConcurrentDownloads(
+                    preferences[Keys.maxConcurrentDownloads] ?: DEFAULT_MAX_CONCURRENT_DOWNLOADS,
+                ),
+            chunkDownloadConcurrency =
+                safeChunkDownloadConcurrency(
+                    preferences[Keys.chunkDownloadConcurrency] ?: DEFAULT_CHUNK_DOWNLOAD_CONCURRENCY,
+                ),
+            mpkgConversionPreset =
+                preferences[Keys.mpkgConversionPreset]
+                    ?.let(MpkgConversionPreset::fromStableId)
+                    ?: MpkgConversionPreset.HIGH_QUALITY,
+            preserveAudio = preferences[Keys.preserveAudio] ?: false,
+            workshopSourceCacheEnabled = preferences[Keys.workshopSourceCacheEnabled] ?: true,
+            workshopSourceCacheBudgetGiB = (preferences[Keys.workshopSourceCacheBudgetGiB] ?: 5).coerceAtLeast(0),
+            downloadProxyUrl = preferences[Keys.downloadProxyUrl].orEmpty(),
+            downloadProxyEnabled = preferences[Keys.downloadProxyEnabled] ?: false,
+            downloadProxyRequiresConfirmation =
+                preferences[Keys.downloadProxyEnabled] == null &&
+                    !preferences[Keys.downloadProxyUrl].isNullOrBlank(),
+            steamAccessEnabled = preferences[Keys.steamAccessEnabled] ?: false,
+            steamAccessMode = preferences.enumValue(Keys.steamAccessMode, SteamAccessMode.SMART_DOH),
+            steamAccessDohEndpoints = steamAccessDohEndpoints,
+            steamAccessDisabledDohEndpoints = disabledSteamAccessDohEndpoints,
+            steamAccessHosts = preferences[Keys.steamAccessHosts].orEmpty(),
+            mediaCacheLimitMb = (preferences[Keys.mediaCacheLimitMb] ?: DEFAULT_STREAM_CACHE_MB)
+                .normalizedStreamCacheLimitMb(),
+            steamWorkshopDataSource =
+                preferences.enumValue(
+                    Keys.steamWorkshopDataSource,
+                    SteamWorkshopDataSource.COMMUNITY_HTML,
+                ),
+            onlineChunkPlaybackEnabled = preferences[Keys.onlineChunkPlaybackEnabled] ?: false,
+        )
+    }
+
+    private inline fun <reified T : Enum<T>> Preferences.enumValue(
+        key: Preferences.Key<String>,
+        fallback: T,
+    ): T =
+        this[key]
+            ?.let { value -> enumValues<T>().firstOrNull { it.name == value } }
+            ?: fallback
+
+    private object Keys {
+        val setupWizardCompleted = booleanPreferencesKey("setup_wizard_completed")
+        val theme = stringPreferencesKey("theme")
+        val visualStyle = stringPreferencesKey("visual_style")
+        val accent = stringPreferencesKey("accent")
+        val customAccentColor = stringPreferencesKey("custom_accent_color")
+        val useSystemMonet = booleanPreferencesKey("use_system_monet")
+        val schemeStyle = stringPreferencesKey("scheme_style")
+        val contrastLevel = stringPreferencesKey("contrast_level")
+        val pureBlackInDark = booleanPreferencesKey("pure_black_in_dark")
+        val useThemedLauncherIcon = booleanPreferencesKey("use_themed_launcher_icon")
+        val outputTreeUri = stringPreferencesKey("output_tree_uri")
+        val outputDirectoryLabel = stringPreferencesKey("output_directory_label")
+        val localManagementTreeUri = stringPreferencesKey("local_management_tree_uri")
+        val localManagementDirectoryLabel = stringPreferencesKey("local_management_directory_label")
+        val localWallpaperViewMode = stringPreferencesKey("local_wallpaper_view_mode")
+        val homePageSize = intPreferencesKey("home_page_size")
+        val homeColumns = intPreferencesKey("home_columns")
+        val homeCardsPerRow = intPreferencesKey("home_cards_per_row")
+        val homeFilterMultiSelect = booleanPreferencesKey("home_filter_multi_select")
+        val homeSearchFab = booleanPreferencesKey("home_search_fab")
+        val showHomeTopInfo = booleanPreferencesKey("show_home_top_info")
+        val homeBottomBarAutoHide = booleanPreferencesKey("home_bottom_bar_auto_hide")
+        val discoverResultsColumns = intPreferencesKey("discover_results_columns")
+        val homeCardAction = stringPreferencesKey("home_card_action")
+        val homePaginationMode = stringPreferencesKey("home_pagination_mode")
+        val matureContentEnabled = booleanPreferencesKey("mature_content_enabled")
+        val maxConcurrentDownloads = intPreferencesKey("max_concurrent_downloads")
+        val chunkDownloadConcurrency = intPreferencesKey("chunk_download_concurrency")
+        val mpkgConversionPreset = stringPreferencesKey("mpkg_conversion_preset")
+        val preserveAudio = booleanPreferencesKey("mpkg_preserve_audio")
+        val workshopSourceCacheEnabled = booleanPreferencesKey("workshop_source_cache_enabled")
+        val workshopSourceCacheBudgetGiB = intPreferencesKey("workshop_source_cache_budget_gib")
+        val downloadProxyUrl = stringPreferencesKey("download_proxy_url")
+        val downloadProxyEnabled = booleanPreferencesKey("download_proxy_enabled")
+        val steamAccessEnabled = booleanPreferencesKey("steam_access_enabled")
+        val steamAccessMode = stringPreferencesKey("steam_access_mode")
+        val steamAccessDohEndpoints = stringPreferencesKey("steam_access_doh_endpoints")
+        val steamAccessDisabledDohEndpoints = stringPreferencesKey("steam_access_disabled_doh_endpoints")
+        val steamAccessHosts = stringPreferencesKey("steam_access_hosts")
+        val mediaCacheLimitMb = intPreferencesKey("media_cache_limit_mb")
+        val steamApiKey = stringPreferencesKey("steam_api_key")
+        val steamWorkshopDataSource = stringPreferencesKey("steam_workshop_data_source")
+        val onlineChunkPlaybackEnabled = booleanPreferencesKey("online_chunk_playback_enabled")
+    }
+
+    private companion object {
+        const val TAG = "AppPreferencesStore"
+    }
+}
+
+internal fun preferencesFallbackFor(error: Throwable): Preferences = if (error is IOException) emptyPreferences() else throw error

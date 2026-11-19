@@ -1,0 +1,267 @@
+@file:Suppress("ktlint:standard:function-naming")
+
+package com.wallhub.android
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
+import androidx.navigation.NavDestination.Companion.hasRoute
+import androidx.navigation.NavHostController
+import androidx.navigation.compose.NavHost
+import androidx.navigation.navDeepLink
+import androidx.navigation.compose.composable
+import androidx.navigation.toRoute
+import com.wallhub.android.feature.detail.LocalVideoPlayerRoute
+import com.wallhub.android.feature.detail.OnlineVideoPlayerRoute
+import com.wallhub.android.feature.detail.WorkshopDetailRoute
+import com.wallhub.android.feature.discover.DiscoverRoute
+import com.wallhub.android.feature.discover.DiscoverResultsRoute
+import com.wallhub.android.feature.discover.DiscoverFollowingRoute
+import com.wallhub.android.feature.discover.DiscoverQueryEditorRoute
+import com.wallhub.android.feature.downloads.DownloadsRoute
+import com.wallhub.android.feature.home.HomeRoute
+import com.wallhub.android.feature.library.LibraryRoute
+import com.wallhub.android.feature.local.LocalWallpaperRoute
+import com.wallhub.android.feature.profile.ProfileRoute
+import com.wallhub.settings.SettingsRoute
+
+@Composable
+internal fun WallHubNavHost(
+    modifier: Modifier,
+    navController: NavHostController,
+    homeScrollRequest: Int,
+    homeResetRequest: Int,
+    discoverRefreshRequest: Int,
+    onHomeContextMenuActiveChanged: (Boolean) -> Unit,
+    onHomeBottomNavigationCollapsedChanged: (Boolean) -> Unit,
+    homeFloatingBottomBarAutoHideActive: Boolean,
+    homeFloatingNavigation: @Composable androidx.compose.foundation.layout.BoxScope.() -> Unit,
+    animateTopLevelTransitions: Boolean,
+    onFullscreenPlaybackChanged: (Boolean) -> Unit,
+) {
+    val navigateToAuthorSearch: (String) -> Unit = { creator ->
+        creator.authorSearchDestinationOrNull()?.let { destination ->
+            val currentDestination = navController.currentDestination
+            val currentCreatorId =
+                if (currentDestination?.hasRoute<AuthorSearchDestination>() == true) {
+                    navController.currentBackStackEntry?.toRoute<AuthorSearchDestination>()?.authorSearchCreator
+                } else {
+                    null
+                }
+            if (currentCreatorId != destination.authorSearchCreator) navController.navigate(destination)
+        }
+    }
+    val navigateToTagSearch: (String) -> Unit = { tag ->
+        tag.trim().takeIf(String::isNotEmpty)?.let { normalizedTag ->
+            navController.navigate(TagSearchDestination(normalizedTag))
+        }
+    }
+    val openSettings = {
+        navController.navigate(SettingsDestination) { launchSingleTop = true }
+    }
+    val downloadsAreTopLevel = true
+    val openDownloads = {
+        if (downloadsAreTopLevel) {
+            navController.navigateToTopLevelDestination(TopLevelDestination.DOWNLOADS)
+        } else {
+            navController.navigate(DownloadsDestination) { launchSingleTop = true }
+        }
+    }
+    NavHost(
+        navController = navController,
+        startDestination = HomeDestination,
+        modifier =
+            modifier
+                .clipToBounds()
+                .background(MaterialTheme.colorScheme.background),
+        enterTransition = {
+            wallHubEnterTransition(initialState.destination, targetState.destination, animateTopLevelTransitions, downloadsAreTopLevel, popping = false)
+        },
+        exitTransition = {
+            wallHubExitTransition(initialState.destination, targetState.destination, animateTopLevelTransitions, downloadsAreTopLevel, popping = false)
+        },
+        popEnterTransition = {
+            wallHubEnterTransition(initialState.destination, targetState.destination, animateTopLevelTransitions, downloadsAreTopLevel, popping = true)
+        },
+        popExitTransition = {
+            wallHubExitTransition(initialState.destination, targetState.destination, animateTopLevelTransitions, downloadsAreTopLevel, popping = true)
+        },
+        sizeTransform = { null },
+    ) {
+        composable<HomeDestination> { entry ->
+            HomeRoute(
+                onOpenDetail = { navController.navigateToWorkshopDetail(entry, it) },
+                onSearchAuthor = navigateToAuthorSearch,
+                onOpenDownloads = openDownloads,
+                scrollToTopRequest = homeScrollRequest,
+                resetRequest = homeResetRequest,
+                onContextMenuActiveChanged = onHomeContextMenuActiveChanged,
+                onBottomNavigationCollapsedChanged = onHomeBottomNavigationCollapsedChanged,
+                floatingBottomBarAutoHideActive = homeFloatingBottomBarAutoHideActive,
+                floatingNavigation = homeFloatingNavigation,
+            )
+        }
+        // These routes intentionally have independent identities even while their feature screens are migrated.
+        // This lets state restoration and deep links distinguish the new surfaces from legacy pages.
+        composable<DiscoverDestination> {
+            DiscoverRoute(
+                onOpenDetail = { navController.navigate(WorkshopDetailDestination(it)) },
+                onOpenRail = { spec, resolvedTitle -> navController.navigate(spec.toResultsDestination(resolvedTitle)) },
+                onOpenFollowing = { navController.navigate(DiscoverFollowingDestination) },
+                onOpenFriendFavorites = {
+                    navController.navigate(friendResultsDestination(favorites = true))
+                },
+                onOpenFriendCreated = {
+                    navController.navigate(friendResultsDestination(favorites = false))
+                },
+                refreshRequest = discoverRefreshRequest,
+            )
+        }
+        composable<DiscoverFollowingDestination> {
+            DiscoverFollowingRoute(
+                onBack = { navController.popBackStack() },
+                onAddQuery = { navController.navigate(DiscoverQueryEditorDestination) },
+                onOpenQuery = { query ->
+                    if (query.id == "official:focus-creators" || query.id == "official:focus-collections") {
+                        navController.navigate(DiscoverDestination) {
+                            popUpTo(navController.graph.id) { saveState = true }
+                            launchSingleTop = true
+                            restoreState = true
+                        }
+                    } else {
+                        navController.navigate(query.toResultsDestination())
+                    }
+                },
+            )
+        }
+        composable<DiscoverQueryEditorDestination> {
+            DiscoverQueryEditorRoute(
+                onBack = { navController.popBackStack() },
+                onSaved = { query ->
+                    navController.popBackStack()
+                    navController.navigate(query.toResultsDestination())
+                },
+            )
+        }
+        composable<DiscoverResultsDestination> {
+            DiscoverResultsRoute(
+                onBack = { navController.popBackStack() },
+                onOpenDetail = { navController.navigate(WorkshopDetailDestination(it)) },
+                onSearchAuthor = navigateToAuthorSearch,
+                onOpenDownloads = openDownloads,
+                onOpenLogin = { navController.navigate(SteamLoginDestination) },
+            )
+        }
+        composable<ProfileDestination> {
+            ProfileRoute(
+                onOpenSettings = openSettings,
+                onOpenSubscriptions = { navController.navigate(LibraryCollectionDestination("SUBSCRIPTIONS")) },
+                onOpenFavorites = { navController.navigate(LibraryCollectionDestination("FAVORITES")) },
+                onOpenDownloads = openDownloads,
+                onOpenLocal = { navController.navigate(LocalDestination) },
+                onOpenLogin = { navController.navigate(SteamLoginDestination) },
+            )
+        }
+        composable<AuthorSearchDestination> { entry ->
+            HomeRoute(
+                onOpenDetail = { navController.navigateToWorkshopDetail(entry, it) },
+                onSearchAuthor = navigateToAuthorSearch,
+                onOpenDownloads = openDownloads,
+                onBack = { navController.popBackStack() },
+                onContextMenuActiveChanged = onHomeContextMenuActiveChanged,
+            )
+        }
+        composable<TagSearchDestination> { entry ->
+            HomeRoute(
+                onOpenDetail = { navController.navigateToWorkshopDetail(entry, it) },
+                onSearchAuthor = navigateToAuthorSearch,
+                onOpenDownloads = openDownloads,
+                onBack = { navController.popBackStack() },
+                onContextMenuActiveChanged = onHomeContextMenuActiveChanged,
+            )
+        }
+        composable<DownloadsDestination>(
+            deepLinks = listOf(navDeepLink<DownloadsDestination>(basePath = "wallhub://downloads")),
+        ) {
+            DownloadsRoute(
+                onBack = {
+                    if (downloadsAreTopLevel) {
+                        navController.navigateToTopLevelDestination(TopLevelDestination.HOME)
+                    } else {
+                        navController.popBackStack()
+                    }
+                },
+                onPlayVideo = { navController.navigate(LocalVideoPlayerDestination(it)) },
+                onOpenDetail = { navController.navigate(WorkshopDetailDestination(it)) },
+                onBrowse = {
+                    navController.navigateToTopLevelDestination(TopLevelDestination.HOME)
+                },
+            )
+        }
+        composable<LibraryDestination> {
+            LibraryRoute(
+                onOpenLogin = { navController.navigate(SteamLoginDestination) },
+                onBack = { navController.popBackStack() },
+                onOpenDetail = { navController.navigate(WorkshopDetailDestination(it)) },
+                onPlayVideo = { navController.navigate(OnlineVideoPlayerDestination(it)) },
+                onSearchAuthor = navigateToAuthorSearch,
+                onOpenDownloads = openDownloads,
+                onContextMenuActiveChanged = onHomeContextMenuActiveChanged,
+            )
+        }
+        composable<LibraryCollectionDestination> {
+            LibraryRoute(
+                onOpenLogin = { navController.navigate(SteamLoginDestination) },
+                onBack = { navController.popBackStack() },
+                onOpenDetail = { navController.navigate(WorkshopDetailDestination(it)) },
+                onPlayVideo = { navController.navigate(OnlineVideoPlayerDestination(it)) },
+                onSearchAuthor = navigateToAuthorSearch,
+                onOpenDownloads = openDownloads,
+                onContextMenuActiveChanged = onHomeContextMenuActiveChanged,
+            )
+        }
+        composable<LocalDestination> {
+            LocalWallpaperRoute(
+                onOpenWorkshopDetail = { navController.navigate(WorkshopDetailDestination(it)) },
+                onBack = { navController.popBackStack() },
+            )
+        }
+        composable<SettingsDestination> {
+            SettingsRoute(
+                onBack = { navController.popBackStack() },
+            )
+        }
+        composable<SteamLoginDestination> {
+            SettingsRoute(
+                onBack = { navController.popBackStack() },
+                openSteamSignIn = true,
+            )
+        }
+        composable<WorkshopDetailDestination> {
+            WorkshopDetailRoute(
+                onBack = { navController.popBackStack() },
+                onSearchAuthor = navigateToAuthorSearch,
+                onSearchTag = navigateToTagSearch,
+                onOpenLocalVideo = { navController.navigate(LocalVideoPlayerDestination(it)) },
+                onOpenDownloads = openDownloads,
+                onOpenSettings = { navController.navigate(SettingsDestination) },
+                onFullscreenPlaybackChanged = onFullscreenPlaybackChanged,
+            )
+        }
+        composable<LocalVideoPlayerDestination> {
+            LocalVideoPlayerRoute(
+                onBack = { navController.popBackStack() },
+                onFullscreenPlaybackChanged = onFullscreenPlaybackChanged,
+            )
+        }
+        composable<OnlineVideoPlayerDestination> {
+            OnlineVideoPlayerRoute(
+                onBack = { navController.popBackStack() },
+                onFullscreenPlaybackChanged = onFullscreenPlaybackChanged,
+            )
+        }
+    }
+}
