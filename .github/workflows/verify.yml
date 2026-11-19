@@ -36,7 +36,6 @@ jobs:
           distribution: temurin
           java-version: "17"
           cache: gradle
-      - uses: android-actions/setup-android@v3
       - uses: dtolnay/rust-toolchain@1.98.0
         with:
           targets: aarch64-linux-android
@@ -44,7 +43,10 @@ jobs:
         with:
           gradle-version: 8.12.1
       - name: Install Android SDK packages
-        run: yes | sdkmanager "platforms;android-36" "build-tools;35.0.0" "ndk;27.0.12077973"
+        run: |
+          sdkmanager --version
+          yes | sdkmanager --licenses > /dev/null || true
+          yes | sdkmanager "platforms;android-36" "build-tools;35.0.0" "ndk;27.0.12077973"
       - name: Stage locked native dependencies
         env:
           ANDROID_NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/27.0.12077973
