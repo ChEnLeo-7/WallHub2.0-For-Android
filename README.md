@@ -7,9 +7,12 @@
     <a href="https://github.com/ChEnLeo-7/WallHub2.0-For-Android/releases/latest">下载最新版</a> ·
     <a href="https://github.com/ChEnLeo-7/WallHub2.0-For-Android/issues">反馈问题</a>
   </p>
+  <p>
+    <a href="https://github.com/ChEnLeo-7/WallHub2.0-For-Android/actions/workflows/verify.yml"><img src="https://github.com/ChEnLeo-7/WallHub2.0-For-Android/actions/workflows/verify.yml/badge.svg?branch=main" alt="Android CI"></a>
+    <a href="https://github.com/ChEnLeo-7/WallHub2.0-For-Android/releases/latest"><img src="https://img.shields.io/github/v/release/ChEnLeo-7/WallHub2.0-For-Android?display_name=tag&style=flat-square" alt="Latest release"></a>
+    <a href="LICENSE"><img src="https://img.shields.io/github/license/ChEnLeo-7/WallHub2.0-For-Android?style=flat-square" alt="License"></a>
+  </p>
 </div>
-
-[![Android CI](https://github.com/ChEnLeo-7/WallHub2.0-For-Android/actions/workflows/verify.yml/badge.svg?branch=main)](https://github.com/ChEnLeo-7/WallHub2.0-For-Android/actions/workflows/verify.yml) [![Latest Release](https://img.shields.io/github/v/release/ChEnLeo-7/WallHub2.0-For-Android?display_name=tag&style=flat-square)](https://github.com/ChEnLeo-7/WallHub2.0-For-Android/releases/latest) [![License](https://img.shields.io/github/license/ChEnLeo-7/WallHub2.0-For-Android?style=flat-square)](LICENSE)
 
 WallHub for Android 是一款独立的原生 Android 客户端，帮助你直接在手机上浏览和管理 Wallpaper Engine 创意工坊内容。无需电脑或额外服务，即可在线播放视频壁纸、转换并导入兼容作品，并在国内直连网络环境下访问 Steam。
 

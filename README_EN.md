@@ -7,9 +7,12 @@
     <a href="https://github.com/ChEnLeo-7/WallHub2.0-For-Android/releases/latest">Latest release</a> ·
     <a href="https://github.com/ChEnLeo-7/WallHub2.0-For-Android/issues">Report an issue</a>
   </p>
+  <p>
+    <a href="https://github.com/ChEnLeo-7/WallHub2.0-For-Android/actions/workflows/verify.yml"><img src="https://github.com/ChEnLeo-7/WallHub2.0-For-Android/actions/workflows/verify.yml/badge.svg?branch=main" alt="Android CI"></a>
+    <a href="https://github.com/ChEnLeo-7/WallHub2.0-For-Android/releases/latest"><img src="https://img.shields.io/github/v/release/ChEnLeo-7/WallHub2.0-For-Android?display_name=tag&style=flat-square" alt="Latest release"></a>
+    <a href="LICENSE"><img src="https://img.shields.io/github/license/ChEnLeo-7/WallHub2.0-For-Android?style=flat-square" alt="License"></a>
+  </p>
 </div>
-
-[![Android CI](https://github.com/ChEnLeo-7/WallHub2.0-For-Android/actions/workflows/verify.yml/badge.svg?branch=main)](https://github.com/ChEnLeo-7/WallHub2.0-For-Android/actions/workflows/verify.yml) [![Latest Release](https://img.shields.io/github/v/release/ChEnLeo-7/WallHub2.0-For-Android?display_name=tag&style=flat-square)](https://github.com/ChEnLeo-7/WallHub2.0-For-Android/releases/latest) [![License](https://img.shields.io/github/license/ChEnLeo-7/WallHub2.0-For-Android?style=flat-square)](LICENSE)
 
 WallHub for Android is an independent native Android client for browsing and managing Wallpaper Engine Workshop content on your phone. No PC or extra service is needed to stream video wallpapers, convert and import compatible items, or access Steam directly on supported mainland China networks.
 
