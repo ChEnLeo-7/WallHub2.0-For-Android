@@ -183,12 +183,7 @@ android {
     }
     sourceSets.named("androidTest") {
         kotlin.directories.clear()
-        kotlin.directories +=
-            if (providers.gradleProperty("wallhub.extremeMemoryDeviceTest").orNull == "true") {
-                "src/extremeMemoryDeviceTest/kotlin"
-            } else {
-                "src/androidTestFocused/kotlin"
-            }
+        kotlin.directories += "src/androidTestFocused/kotlin"
         assets.directories += "$projectDir/schemas"
     }
 }

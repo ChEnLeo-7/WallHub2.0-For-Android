@@ -33,7 +33,6 @@ signing.properties
 # Local-only diagnostic and benchmark scaffolding
 /app/src/benchmark/
 /benchmark/
-/app/src/main/kotlin/com/wallhub/prototype/mpkg/MpkgSelfTest.kt
 
 # Generated screenshot goldens, preview fixtures and preview runs stay outside the source repository
 /app/src/testFocused/snapshots/
