@@ -8,8 +8,7 @@
   "pomSha256": "bca32644feb606322d2decd02676e4fc22fdae693c34614a2431fe06e036bc0b",
   "schemaVersion": 2,
   "sdkSource": {
-    "commit": "3686dd5a576bf59df4d1acc6afb1a86aa697d4ca",
-    "state": "dirty-candidate",
-    "treeSha256": "22eb86531a708bc26b08a322b3971f04de7707cf6bf3516de4078fc71f34c8ac"
+    "commit": "8732657fc32d78a8113ece2f994f2d681cbbad5a",
+    "state": "clean"
   }
 }
