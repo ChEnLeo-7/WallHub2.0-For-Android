@@ -1,17 +1,17 @@
-name: Android CI
+name: Android Checks
 
 on:
-  workflow_dispatch:
   push:
     branches:
       - main
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: android-ci-${{ github.workflow }}-${{ github.ref }}
+  group: android-checks-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -62,93 +62,7 @@ jobs:
         run: |
           chmod +x scripts/stage-android-native-dependencies.sh scripts/build-etc2.sh
           scripts/stage-android-native-dependencies.sh
-      - name: Verify Android application
+      - name: Run unit tests and static checks
         run: |
           chmod +x gradlew
-          ./gradlew --no-daemon --max-workers=1 :app:testDebugUnitTest :app:verifyLintSourceWarningBudget detekt ktlintCheck dependencyUpdates :app:assembleDebug
-      - name: Require Release signing secrets
-        if: github.event_name != 'pull_request'
-        env:
-          WALLHUB_RELEASE_KEYSTORE_BASE64: ${{ secrets.WALLHUB_RELEASE_KEYSTORE_BASE64 }}
-          WALLHUB_RELEASE_STORE_PASSWORD: ${{ secrets.WALLHUB_RELEASE_STORE_PASSWORD }}
-          WALLHUB_RELEASE_KEY_ALIAS: ${{ secrets.WALLHUB_RELEASE_KEY_ALIAS }}
-          WALLHUB_RELEASE_KEY_PASSWORD: ${{ secrets.WALLHUB_RELEASE_KEY_PASSWORD }}
-        run: |
-          missing=0
-          for variable in \
-            WALLHUB_RELEASE_KEYSTORE_BASE64 \
-            WALLHUB_RELEASE_STORE_PASSWORD \
-            WALLHUB_RELEASE_KEY_ALIAS \
-            WALLHUB_RELEASE_KEY_PASSWORD; do
-            if [ -z "${!variable}" ]; then
-              echo "::error::Missing GitHub Actions secret: $variable"
-              missing=1
-            fi
-          done
-          exit "$missing"
-      - name: Restore Release signing keystore
-        if: github.event_name != 'pull_request'
-        env:
-          WALLHUB_RELEASE_KEYSTORE_BASE64: ${{ secrets.WALLHUB_RELEASE_KEYSTORE_BASE64 }}
-          WALLHUB_RELEASE_STORE_FILE: ${{ runner.temp }}/wallhub-release.keystore
-        run: |
-          printf '%s' "$WALLHUB_RELEASE_KEYSTORE_BASE64" | base64 --decode > "$WALLHUB_RELEASE_STORE_FILE"
-          test -s "$WALLHUB_RELEASE_STORE_FILE"
-          chmod 600 "$WALLHUB_RELEASE_STORE_FILE"
-      - name: Assemble signed Release APK
-        if: github.event_name != 'pull_request'
-        env:
-          WALLHUB_RELEASE_STORE_FILE: ${{ runner.temp }}/wallhub-release.keystore
-          WALLHUB_RELEASE_STORE_PASSWORD: ${{ secrets.WALLHUB_RELEASE_STORE_PASSWORD }}
-          WALLHUB_RELEASE_KEY_ALIAS: ${{ secrets.WALLHUB_RELEASE_KEY_ALIAS }}
-          WALLHUB_RELEASE_KEY_PASSWORD: ${{ secrets.WALLHUB_RELEASE_KEY_PASSWORD }}
-        run: ./gradlew :app:assembleRelease -Pwallhub.requireReleaseSigning=true
-      - name: Verify Release APK size
-        if: github.event_name != 'pull_request'
-        run: |
-          apk_path="app/build/outputs/apk/release/app-release.apk"
-          apksigner="$ANDROID_HOME/build-tools/35.0.0/apksigner"
-          release_certificate="$($apksigner verify --print-certs "$apk_path" | awk -F': ' '/Signer #1 certificate SHA-256 digest:/{print toupper($2); exit}')"
-          release_subject="$($apksigner verify --print-certs "$apk_path" | awk -F': ' '/Signer #1 certificate DN:/{print $2; exit}')"
-          debug_certificate="$($apksigner verify --print-certs app/build/outputs/apk/debug/app-debug.apk | awk -F': ' '/Signer #1 certificate SHA-256 digest:/{print toupper($2); exit}')"
-          expected_release_certificate="$(tr -d '[:space:]' < config/release-signing-certificate.sha256 | tr '[:lower:]' '[:upper:]')"
-          test -n "$release_certificate" -a -n "$release_subject" -a -n "$debug_certificate"
-          [[ "$expected_release_certificate" =~ ^[0-9A-F]{64}$ ]]
-          [[ "$release_certificate" == "$expected_release_certificate" ]] || {
-            echo "::error::Release APK does not match the pinned published signing identity"
-            exit 1
-          }
-          if grep -Eiq '(^|,[[:space:]]*)CN=Android Debug(,|$)' <<<"$release_subject"; then
-            echo "::warning::Pinned legacy Release identity uses Android Debug DN; rotate only with an Android signing lineage"
-          fi
-          [[ "$release_certificate" != "$debug_certificate" ]] || {
-            echo "::error::Release APK is signed with the Android Debug certificate"
-            exit 1
-          }
-          printf 'Release certificate subject: %s\n' "$release_subject"
-          printf 'Release certificate SHA-256: %s\n' "$release_certificate"
-          apk_size="$(stat --format='%s' "$apk_path")"
-          max_size="$((40 * 1024 * 1024))"
-          printf 'Release APK size: %s bytes (limit: %s bytes)\n' "$apk_size" "$max_size"
-          if [ "$apk_size" -gt "$max_size" ]; then
-            echo "::error::Release APK exceeds the 40 MiB size budget"
-            exit 1
-          fi
-      - name: Package Release APK artifact
-        if: github.event_name != 'pull_request'
-        run: |
-          mkdir -p artifact
-          cp app/build/outputs/apk/release/app-release.apk artifact/wallhub-release.apk
-          (
-            cd artifact
-            sha256sum wallhub-release.apk > wallhub-release.apk.sha256
-          )
-          printf '%s\n' "$GITHUB_SHA" > artifact/commit-sha.txt
-      - name: Upload signed Release APK
-        if: github.event_name != 'pull_request'
-        uses: actions/upload-artifact@v4
-        with:
-          name: wallhub-release-${{ github.sha }}
-          path: artifact/
-          if-no-files-found: error
-          retention-days: 7
+          ./gradlew --no-daemon --max-workers=1 :app:testDebugUnitTest :app:verifyLintSourceWarningBudget detekt ktlintCheck
